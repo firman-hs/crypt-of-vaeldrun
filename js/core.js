@@ -48,6 +48,11 @@ function rollD20WithMod(mod, dc, label) {
   state.rollLog.push(entry);
   updateLog();
 
+  // Trigger dice animation (defined in dice.js)
+  if (typeof animateDiceRoll === 'function') {
+    animateDiceRoll(d, isCrit, isFumble);
+  }
+
   return { d, total, success, isCrit, isFumble };
 }
 
