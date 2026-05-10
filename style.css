@@ -1,5 +1,5 @@
 /* ============================================================
-   THE CRYPT OF VAEL'DRUN — STYLESHEET
+   THE CHRONICLES OF AETHELFORD — STYLESHEET
    Aesthetic: dark fantasy grimoire × terminal
    ============================================================ */
 
@@ -7,19 +7,24 @@
   --bg-deep: #0a0807;
   --bg-parchment: #1a1410;
   --ink: #d4c5a0;
-  --ink-faded: #a89878;        /* dinaikkan dari #8a7a5c agar whisper text lebih terbaca */
+  --ink-faded: #a89878;
   --blood: #8b1a1a;
   --blood-bright: #c43030;
   --gold: #c9a961;
-  --gold-soft: #b89752;        /* untuk teks emphasis (italic) — lebih terbaca dari gold-dim */
-  --gold-dim: #6b5530;          /* dipakai untuk border & decoration saja, BUKAN teks */
+  --gold-soft: #b89752;
+  --gold-dim: #6b5530;
   --shadow: rgba(0, 0, 0, 0.8);
   --vignette: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.6) 100%);
 
   /* Resource colors per class */
-  --stamina: #c97a3a;     /* warrior orange */
-  --mana: #4a7fc9;        /* mage blue */
-  --focus: #7d4a9c;       /* rogue purple */
+  --stamina: #c97a3a;
+  --mana: #4a7fc9;
+  --focus: #7d4a9c;
+
+  /* Location accent colors */
+  --crypt-accent: #8b3a8b;     /* Vael'drun: necromantic purple */
+  --forge-accent: #c95428;     /* Korr-Dun: lava orange */
+  --town-accent: #a89060;       /* Aethelford: warm gold */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,7 +37,6 @@ html, body {
   overflow-x: hidden;
 }
 
-/* Subtle film grain & atmospheric tint */
 body::before {
   content: '';
   position: fixed; inset: 0;
@@ -43,7 +47,6 @@ body::before {
   z-index: 1;
 }
 
-/* Vignette overlay */
 body::after {
   content: '';
   position: fixed; inset: 0;
@@ -149,7 +152,6 @@ body::after {
 .stat-row .label { color: var(--ink-faded); }
 .stat-row .value { color: var(--gold); font-weight: 500; }
 
-/* HP / Resource bars */
 .hp-bar {
   width: 100%;
   height: 8px;
@@ -174,7 +176,6 @@ body::after {
   box-shadow: 0 0 6px var(--gold);
 }
 
-/* Class-specific resource bar tints (set via .class-warrior etc on body) */
 body.class-warrior .resource-fill {
   background: linear-gradient(90deg, #6b3a1a, var(--stamina));
   box-shadow: 0 0 6px var(--stamina);
@@ -409,6 +410,88 @@ body.class-rogue .resource-fill {
 .class-card.class-warrior .resource-tag { color: var(--stamina); }
 .class-card.class-mage .resource-tag { color: var(--mana); }
 .class-card.class-rogue .resource-tag { color: var(--focus); }
+
+/* ============================================================
+   WORLD MAP / LOCATION CARDS (BARU)
+   ============================================================ */
+.location-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.location-card {
+  background: var(--bg-parchment);
+  border: 1px solid var(--gold-dim);
+  padding: 24px 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.location-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 100%, var(--accent, var(--gold-dim)), transparent 60%);
+  opacity: 0.15;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.location-card:hover {
+  border-color: var(--accent, var(--gold));
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 30px var(--accent-glow, rgba(201, 169, 97, 0.2));
+}
+
+.location-card:hover::after { opacity: 0.3; }
+
+.location-card.completed { opacity: 0.7; }
+.location-card.completed::before {
+  content: '✓ Selesai';
+  position: absolute;
+  top: 8px; right: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #6b9c4f;
+  letter-spacing: 1px;
+}
+
+.location-card .icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.location-card h3 {
+  font-family: 'UnifrakturCook', serif;
+  font-size: 22px;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+  color: var(--accent, var(--gold));
+}
+
+.location-card .location-type {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--ink-faded);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 10px;
+}
+
+.location-card p {
+  font-size: 14px;
+  color: var(--ink);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.location-card.crypt { --accent: var(--crypt-accent); --accent-glow: rgba(139, 58, 139, 0.2); }
+.location-card.forge { --accent: var(--forge-accent); --accent-glow: rgba(201, 84, 40, 0.2); }
+.location-card.town  { --accent: var(--town-accent); --accent-glow: rgba(168, 144, 96, 0.2); }
 
 /* ============================================================
    ROLL LOG
