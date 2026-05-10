@@ -1,4 +1,4 @@
-# 🪦 The Chronicles of Aethelford
+# 🪦 The Crypt of Vael'drun
 
 > *Sebuah prototipe text-adventure RPG ala Dungeons & Dragons, dibangun dengan vanilla HTML/CSS/JavaScript.*
 
@@ -53,7 +53,7 @@ Tidak ada build step, tidak ada dependency, tidak ada bundler. Cukup buka `index
 ## 📁 Struktur Project
 
 ```
-chronicles-of-aethelford/
+crypt-of-vaeldrun/
 ├── index.html              # entry point, load semua script
 ├── style.css               # styling lengkap (dark fantasy theme)
 ├── README.md               # file ini

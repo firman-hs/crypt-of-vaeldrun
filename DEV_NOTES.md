@@ -2,7 +2,7 @@
 
 > *Internal documentation untuk menjaga konsistensi project saat dikembangkan lintas sesi atau kontributor.*
 
-**Project**: The Chronicles of Aethelford  
+**Project**: The Crypt of Vael'drun  
 **Tipe**: Text-adventure RPG, browser-based, vanilla JS  
 **Last updated**: 2026-05-10
 
@@ -286,7 +286,7 @@ Kalau kamu mulai chat baru dengan Claude (atau developer lain), upload file ini 
 **Template prompt awal yang efektif:**
 
 ```
-Saya melanjutkan project text-RPG D&D bernama "Chronicles of Aethelford".
+Saya melanjutkan project text-RPG D&D bernama "Crypt of Vael'drun".
 Saya sudah punya foundation lengkap (lihat DEV_NOTES.md dan README.md).
 
 Hari ini saya mau kerjakan: [FITUR_X]
