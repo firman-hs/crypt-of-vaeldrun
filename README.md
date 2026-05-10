@@ -4,7 +4,7 @@
 
 Petualangan dark fantasy di mana kau bermain sebagai seorang adventurer yang dipanggil ke desa Aethelford — desa kecil yang dijepit antara dua bencana: sebuah crypt yang dihuni lich kuno, dan sebuah tambang dwarf yang ditelan iblis. Pilih class-mu, masuki dungeon, dan tentukan akhir cerita melalui pilihan dan dadu.
 
-🎮 **[Mainkan sekarang](firman-hs.github.io/crypt-of-vaeldrun/)**
+🎮 **[Mainkan sekarang](https://firman-hs.github.io/crypt-of-vaeldrun/)**
 
 ---
 
