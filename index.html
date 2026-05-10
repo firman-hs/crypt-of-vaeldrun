@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Crypt of Vael'drun — A D&D Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&family=UnifrakturCook:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+
+  <header class="header">
+    <h1 class="title">The Crypt of Vael'drun</h1>
+    <p class="subtitle">— sebuah prototipe petualangan ala Dungeons &amp; Dragons —</p>
+  </header>
+
+  <div id="statusPanel" class="status-panel">
+    <div class="stat-block">
+      <h3>◈ Petualang</h3>
+      <div class="stat-row"><span class="label">Class</span><span class="value" id="charClass">—</span></div>
+      <div class="stat-row"><span class="label">Level</span><span class="value" id="charLevel">1</span></div>
+      <div class="stat-row"><span class="label">XP</span><span class="value" id="charXP">0 / 100</span></div>
+      <div class="stat-row"><span class="label">Gold</span><span class="value" id="charGold">0</span></div>
+      <div class="stat-row"><span class="label">HP</span><span class="value" id="charHP">10/10</span></div>
+      <div class="hp-bar"><div class="hp-fill" id="hpFill" style="width:100%"></div></div>
+      <div class="stat-row" style="margin-top:8px;"><span class="label" id="resourceLabel">Resource</span><span class="value" id="charResource">—</span></div>
+      <div class="hp-bar"><div class="resource-fill" id="resourceFill" style="width:100%"></div></div>
+    </div>
+    <div class="stat-block">
+      <h3>◈ Atribut &amp; Senjata</h3>
+      <div class="stat-row"><span class="label">STR</span><span class="value" id="statSTR">+0</span></div>
+      <div class="stat-row"><span class="label">DEX</span><span class="value" id="statDEX">+0</span></div>
+      <div class="stat-row"><span class="label">INT</span><span class="value" id="statINT">+0</span></div>
+      <div class="stat-row"><span class="label">CON</span><span class="value" id="statCON">+0</span></div>
+      <div class="stat-row"><span class="label">Senjata</span><span class="value" id="charWeapon">—</span></div>
+      <div class="stat-row"><span class="label">Status</span><span class="value" id="charStatus">—</span></div>
+    </div>
+  </div>
+
+  <main class="narrative">
+    <div id="narrativeContent" class="narrative-content fade-in"></div>
+  </main>
+
+  <div id="choices" class="choices"></div>
+
+  <div class="log-toggle">
+    <button id="logToggle">⌘ Lihat Catatan Roll</button>
+    <div id="log" class="log"></div>
+  </div>
+
+  <footer class="footer">
+    ✦ ditempa di kegelapan, untuk para penjelajah pemberani ✦
+  </footer>
+
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
