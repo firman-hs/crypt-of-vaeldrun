@@ -7,11 +7,12 @@
   --bg-deep: #0a0807;
   --bg-parchment: #1a1410;
   --ink: #d4c5a0;
-  --ink-faded: #8a7a5c;
+  --ink-faded: #a89878;        /* dinaikkan dari #8a7a5c agar whisper text lebih terbaca */
   --blood: #8b1a1a;
   --blood-bright: #c43030;
   --gold: #c9a961;
-  --gold-dim: #6b5530;
+  --gold-soft: #b89752;        /* untuk teks emphasis (italic) — lebih terbaca dari gold-dim */
+  --gold-dim: #6b5530;          /* dipakai untuk border & decoration saja, BUKAN teks */
   --shadow: rgba(0, 0, 0, 0.8);
   --vignette: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.6) 100%);
 
@@ -226,7 +227,7 @@ body.class-rogue .resource-fill {
   letter-spacing: 1px;
 }
 
-.narrative-content em { color: var(--gold-dim); font-style: italic; }
+.narrative-content em { color: var(--gold-soft); font-style: italic; }
 
 .narrative-content .roll {
   font-family: 'JetBrains Mono', monospace;
@@ -271,7 +272,7 @@ body.class-rogue .resource-fill {
 
 .choice-btn::before {
   content: '❯';
-  color: var(--gold-dim);
+  color: var(--gold-soft);
   margin-right: 12px;
   font-family: 'JetBrains Mono', monospace;
   transition: all 0.25s ease;
@@ -447,7 +448,7 @@ body.class-rogue .resource-fill {
 }
 
 .log.visible { display: block; }
-.log .turn { color: var(--gold-dim); }
+.log .turn { color: var(--gold-soft); }
 
 /* ============================================================
    FOOTER
