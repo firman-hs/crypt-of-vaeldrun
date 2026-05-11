@@ -20,7 +20,7 @@
    ============================================================ */
 
 import { state } from './state.js';
-import { roll, rollD20WithMod, whenDiceIdle } from './dice.js';
+import { roll, rollD20WithMod, requestRollWithReroll, whenDiceIdle } from './dice.js';
 import {
   showNarrative, appendNarrative, showChoices, clearChoices,
   updateStatusPanel, gainXP
@@ -84,14 +84,15 @@ export function combat(monsterIdOrObj, onWin) {
 
   /**
    * Eksekusi satu turn combat dengan aksi pemain.
+   * Player phase: async (untuk dadu tension), monster phase: sync setelahnya.
+   *
    * @param {'attack' | 'ability' | 'flee'} action
    * @param {string} [abilityId]
    */
-  function combatTurn(action, abilityId) {
-    // Disable tombol turn ini segera supaya nggak bisa di-spam
+  async function combatTurn(action, abilityId) {
     clearChoices();
 
-    // ─── CHUNK 1: PLAYER PHASE ──────────────────────────────
+    // ─── PLAYER PHASE ───────────────────────────────────────
     let playerLog = '';
 
     playerLog += processPlayerStatusEffects(p);
@@ -100,60 +101,93 @@ export function combat(monsterIdOrObj, onWin) {
       if (playerLog) appendNarrative(playerLog);
       return playerDeath();
     }
+    if (playerLog) {
+      appendNarrative(playerLog);
+      playerLog = '';
+    }
 
     if (action === 'attack') {
-      playerLog += playerAttack(p, m);
+      const attackLog = await playerAttack(p, m);
+      appendNarrative(attackLog);
     } else if (action === 'ability' && abilityId) {
       const ab = ABILITIES[abilityId];
       p.resource.current -= ab.cost;
       if (ab.once) usedOnceAbilities.add(abilityId);
-      playerLog += ab.use(p, m);
+      const abilityLog = ab.use(p, m);
+      appendNarrative(abilityLog);
     } else if (action === 'flee') {
-      const r = rollD20WithMod(p.stats.DEX, 14, 'Flee');
-      if (r.success) {
-        playerLog += `<p>Kau berhasil melarikan diri ke kegelapan. <span class="roll">DEX check ${r.total} vs DC 14</span></p>`;
-        appendNarrative(playerLog);
-        showChoices([{ text: 'Lanjutkan', action: () => fleeBackToSafe() }]);
-        return;
-      }
-      playerLog += `<p class="failure">Kau gagal kabur — kakimu tersandung. <span class="roll">DEX check ${r.total} vs DC 14</span></p>`;
+      const fleeOk = await tryFlee(p);
+      if (fleeOk) return;
     }
 
     updateStatusPanel();
-    appendNarrative(playerLog);
 
     if (m.hp <= 0) return victory();
 
-    // ─── CHUNK 2: MONSTER PHASE (deferred sampai dadu player settled) ─
-    whenDiceIdle(() => {
-      let monsterLog = '';
+    // ─── MONSTER PHASE ──────────────────────────────────────
+    // Tunggu dadu player committed sebelum monster bertindak.
+    whenDiceIdle(() => doMonsterPhase());
+  }
 
-      monsterLog += processMonsterStatusEffects(m);
-      if (m.hp <= 0) {
-        appendNarrative(monsterLog);
-        return victory();
+  function doMonsterPhase() {
+    let monsterLog = '';
+
+    monsterLog += processMonsterStatusEffects(m);
+    if (m.hp <= 0) {
+      if (monsterLog) appendNarrative(monsterLog);
+      return victory();
+    }
+
+    if (m.statusEffects.stunned && m.statusEffects.stunned > 0) {
+      monsterLog += `<p class="buff">${m.name} terhuyung dan kehilangan giliran.</p>`;
+    } else {
+      monsterLog += monsterAttack(p, m);
+    }
+
+    decrementBuffs(p);
+    decrementBuffs(m);
+
+    p.resource.current = Math.min(p.resource.max, p.resource.current + p.resource.regen);
+    updateStatusPanel();
+
+    const statusStr = getStatusString(m);
+    monsterLog += `<p class="whisper">— ${m.name}: ${m.hp}/${m.maxHp} HP — ${statusStr !== '—' ? `Status: ${statusStr} —` : ''}</p>`;
+    appendNarrative(monsterLog);
+
+    if (p.hp <= 0) return playerDeath();
+
+    renderCombatChoices();
+  }
+
+  /**
+   * Coba flee dengan DEX check (dengan dadu tension + reroll).
+   * Return true jika flee sukses (caller hentikan combat).
+   * @param {import('./types.js').Player} p
+   * @returns {Promise<boolean>}
+   */
+  async function tryFlee(p) {
+    const dc = 14;
+    appendNarrative(`<p class="whisper">Mencoba melarikan diri... <em>butuh ≥${dc - p.stats.DEX}</em></p>`);
+
+    const r = await requestRollWithReroll(p.stats.DEX, dc, 'Flee', {
+      canReroll: p.fateTokens > 0,
+      onRerollAttempt: () => {
+        if (p.fateTokens > 0) {
+          p.fateTokens--;
+          updateStatusPanel();
+          return true;
+        }
+        return false;
       }
-
-      if (m.statusEffects.stunned && m.statusEffects.stunned > 0) {
-        monsterLog += `<p class="buff">${m.name} terhuyung dan kehilangan giliran.</p>`;
-      } else {
-        monsterLog += monsterAttack(p, m);
-      }
-
-      decrementBuffs(p);
-      decrementBuffs(m);
-
-      p.resource.current = Math.min(p.resource.max, p.resource.current + p.resource.regen);
-      updateStatusPanel();
-
-      const statusStr = getStatusString(m);
-      monsterLog += `<p class="whisper">— ${m.name}: ${m.hp}/${m.maxHp} HP — ${statusStr !== '—' ? `Status: ${statusStr} —` : ''}</p>`;
-      appendNarrative(monsterLog);
-
-      if (p.hp <= 0) return playerDeath();
-
-      renderCombatChoices();
     });
+
+    if (r.success) {
+      appendNarrative(`<p>Kau berhasil melarikan diri ke kegelapan. <span class="roll">d20(${r.d})+${p.stats.DEX} = ${r.total} vs DC ${dc}</span></p>`);
+      showChoices([{ text: 'Lanjutkan', action: () => fleeBackToSafe() }]);
+      return true;
+    }
+    appendNarrative(`<p class="failure">Kau gagal kabur — kakimu tersandung. <span class="roll">d20(${r.d})+${p.stats.DEX} = ${r.total} vs DC ${dc}</span></p>`);
+    return false;
   }
 
   function victory() {
@@ -225,23 +259,43 @@ export function combat(monsterIdOrObj, onWin) {
 
 /**
  * Serangan dasar player dengan senjata.
+ * Async: tampilkan threshold dulu, lalu dadu (dengan kesempatan reroll),
+ * lalu hitung damage dan return narrative log.
+ *
  * @param {Player} p
  * @param {Monster} m
- * @returns {string}
+ * @returns {Promise<string>}
  */
-function playerAttack(p, m) {
+async function playerAttack(p, m) {
   let mod = p.stats[p.weapon.stat];
   if (p.statusEffects.advantage && p.statusEffects.advantage > 0) mod += 5;
 
-  const r = rollD20WithMod(mod, m.ac, `Attack vs ${m.name}`);
+  const dc = m.ac;
+  const threshold = dc - mod;
+
+  // Tampilkan konteks sebelum dadu
+  appendNarrative(`<p class="whisper">Kau mengayun ${p.weapon.name} ke arah ${m.name}... <em>butuh ≥${threshold}</em></p>`);
+
+  const r = await requestRollWithReroll(mod, dc, `Attack vs ${m.name}`, {
+    canReroll: p.fateTokens > 0,
+    onRerollAttempt: () => {
+      if (p.fateTokens > 0) {
+        p.fateTokens--;
+        updateStatusPanel();
+        return true;
+      }
+      return false;
+    }
+  });
+
   if (r.success) {
     let dmg = roll(p.weapon.dmg[1]) + p.weapon.dmg[0] - 1 + Math.max(0, p.stats[p.weapon.stat]);
     if (r.isCrit) dmg *= 2;
     m.hp -= dmg;
-    return `<p>Kau menebas dengan ${p.weapon.name}. <span class="roll">d20(${r.d})+${mod} = ${r.total} vs AC ${m.ac}</span></p>
+    return `<p>Mata pedangmu menemukan celah. <span class="roll">d20(${r.d})+${mod} = ${r.total} vs AC ${m.ac}</span></p>
             <p class="success">${r.isCrit ? '✦ CRITICAL HIT! ' : ''}Kena! ${dmg} damage.</p>`;
   }
-  return `<p>Kau mengayun, tapi <span class="roll">d20(${r.d})+${mod} = ${r.total}</span> tidak mencapai AC ${m.ac}.</p>
+  return `<p>Ayunanmu memecah udara saja. <span class="roll">d20(${r.d})+${mod} = ${r.total} vs AC ${m.ac}</span></p>
           <p class="failure">${r.isFumble ? '✦ FUMBLE! ' : ''}Meleset.</p>`;
 }
 

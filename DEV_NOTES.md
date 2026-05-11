@@ -7,6 +7,8 @@
 **Last updated**: 2026-05-11
 
 > **Phase 1 refactor (2026-05-11)**: Project sudah dimigrasi ke **ES Modules** dengan struktur folder baru (`engine/`, `data/`, `scenes/`) dan type-checking via JSDoc + `tsconfig.json`. Lihat section "Struktur File" dan "Decisions History" untuk detail.
+>
+> **Phase 2: Dadu Sebagai Tension (2026-05-11)**: Combat dadu refactor jadi async dengan **threshold display** sebelum roll, **reroll mechanic** dengan Fate Tokens (3 awal, restore di inn). Player attack & flee sekarang pakai `requestRollWithReroll()` yang Promise-based. Lihat section "Decisions History" untuk detail.
 
 ---
 
@@ -193,9 +195,22 @@ Pattern ini disebut **dependency injection** dan lebih clean daripada hack `wind
 ### Dice System
 - `roll(sides)` → 1 dadu
 - `rollDice(count, sides)` → multiple dadu
-- `rollD20WithMod(mod, dc, label)` → returns `{ d, total, success, isCrit, isFumble }`
+- `rollD20WithMod(mod, dc, label)` → **sync legacy**, untuk monster attack & internal rolls (tidak butuh tension UX dari sisi player)
   - Auto-trigger animasi via `dice.js`
   - Auto-log ke `state.rollLog`
+- `requestRollWithReroll(mod, dc, label, options)` → **async dengan tension UX**, untuk player attack & ability checks
+  - Tampilkan dadu BEFORE result diketahui
+  - Tunggu pemain (auto-commit 3s atau klik reroll button)
+  - `options.canReroll`: true = tawarkan tombol reroll
+  - `options.onRerollAttempt`: callback yang return true/false (true = boleh reroll, decrement resource)
+  - Return Promise<DiceRollResult>
+
+### Reroll Mechanic (Phase 2)
+- `Player.fateTokens`: current, `Player.maxFateTokens`: 3 (default)
+- Reroll cost: 1 Fate Token
+- Restore: penuh saat istirahat di inn
+- UI: button "↻ Reroll (1 Fate)" muncul setelah dadu settle, auto-commit setelah 3 detik
+- CSS: `.dice-reroll-container.visible` di `style.css`
 
 ### Combat
 - Entry: `combat('monsterId', onWinCallback)` atau `combat({...customMonster}, callback)`
@@ -229,6 +244,9 @@ Threshold: `level × 100`. Per level up: +4 max HP, +1 max resource, full restor
 | Animasi dadu non-invasive (hook di `rollD20WithMod`) | Bisa di-disable tanpa nyentuh kode game lainnya. |
 | Dice-aware narrative queue | `whenDiceIdle()` di dice.js + queue-aware showNarrative/showChoices = animasi dadu nggak fight dengan narasi. Turn-based feel. |
 | Magmaforge AC -2 saat scout sukses | Memberi reward untuk strategy, bukan cuma damage bonus. |
+| **Phase 2: Dadu jadi tension (2026-05-11)** | Sebelum: dadu cuma kosmetik, hasil sudah ditentukan sebelum animasi. Setelah: `requestRollWithReroll()` Promise-based — tampilkan threshold → animasi → reroll button → commit. Pemain merasa dadu beneran ada artinya. |
+| **Fate Tokens** (3 awal, restore di inn) | Memberi player agency atas dadu via reroll. Scarce resource biar keputusan reroll bermakna. Restore di inn = konsisten dengan HP/resource lain. |
+| Async player phase, sync monster phase | Player butuh tension UX (dadu lambat, ada reroll). Monster attack tidak butuh tension — pemain cuma menonton. Jadi monster pakai legacy `rollD20WithMod`. |
 
 ---
 
@@ -244,6 +262,7 @@ Threshold: `level × 100`. Per level up: +4 max HP, +1 max resource, full restor
 - [x] Animated d20 SVG dengan crit/fumble visuals
 - [x] Dice-aware narrative queue (animasi dadu sync dengan narasi)
 - [x] **Phase 1 (2026-05-11)**: Migrasi ke ES Modules + struktur folder baru + JSDoc types + tsconfig
+- [x] **Phase 2 (2026-05-11)**: Dadu sebagai tension — threshold display + Fate Tokens + reroll mechanic
 - [x] README + GitHub Pages deployment
 
 ### 📋 Backlog (urutan prioritas)

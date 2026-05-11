@@ -67,6 +67,8 @@
  * @property {Resource} resource
  * @property {string[]} abilities       - array of ability IDs
  * @property {StatusEffects} statusEffects
+ * @property {number} fateTokens        - current Fate Tokens (untuk reroll)
+ * @property {number} maxFateTokens     - max Fate Tokens (restored di inn)
  */
 
 /**

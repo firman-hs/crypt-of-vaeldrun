@@ -60,6 +60,9 @@ export function updateStatusPanel() {
   });
 
   setText('charWeapon', p.weapon.name);
+  setText('charFate', `${p.fateTokens} / ${p.maxFateTokens}`);
+  const fateEl = document.getElementById('charFate');
+  if (fateEl) fateEl.classList.toggle('fate-low', p.fateTokens <= 1);
   setText('charStatus', getStatusString(p));
 }
 

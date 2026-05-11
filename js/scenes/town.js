@@ -76,11 +76,12 @@ export const townScenes = {
           p.gold -= 5;
           p.hp = p.maxHp;
           p.resource.current = p.resource.max;
+          p.fateTokens = p.maxFateTokens;
           p.statusEffects = {};
           updateStatusPanel();
           showNarrative(`
             <p>Kau jatuh tidur sebelum kepalamu menyentuh bantal. Mimpi-mimpi yang aneh datang dan pergi.</p>
-            <p>Saat fajar, kau bangun dengan tubuh segar. <span class="success">HP dan ${p.resource.name} pulih sepenuhnya.</span></p>
+            <p>Saat fajar, kau bangun dengan tubuh segar. <span class="success">HP, ${p.resource.name}, dan Fate Tokens pulih sepenuhnya.</span></p>
           `);
           showChoices([{ text: 'Kembali ke alun-alun', action: () => goToScene('town') }]);
         }
