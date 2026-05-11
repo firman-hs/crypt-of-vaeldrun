@@ -152,16 +152,75 @@ function updateStatusPanel() {
   document.getElementById('charStatus').textContent = getStatusString(p);
 }
 
+/* ============================================================
+   NARRATIVE & CHOICES (queue-aware)
+   ============================================================
+   showNarrative & showChoices otomatis menunggu dadu settled
+   sebelum render. Ini bikin flow: roll → animasi → narrative.
+
+   appendNarrative menambahkan paragraph ke narrative box yang
+   sudah ada (dipakai di combat untuk turn-based feel).
+
+   Helper queueOrRun() dipakai internal — kalau dadu sedang
+   rolling, tunggu dulu via whenDiceIdle(); kalau tidak, jalan
+   langsung. Aman dipanggil dari mana saja.
+   ============================================================ */
+
+function queueOrRun(fn) {
+  if (typeof whenDiceIdle === 'function') {
+    whenDiceIdle(fn);
+  } else {
+    // Fallback kalau dice.js belum loaded (defensive)
+    fn();
+  }
+}
+
 function showNarrative(html) {
-  const el = document.getElementById('narrativeContent');
-  el.classList.remove('fade-in');
-  void el.offsetWidth;
-  el.innerHTML = html;
-  el.classList.add('fade-in');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  queueOrRun(() => {
+    const el = document.getElementById('narrativeContent');
+    el.classList.remove('fade-in');
+    void el.offsetWidth;
+    el.innerHTML = html;
+    el.classList.add('fade-in');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+// Append HTML ke narrative box. Tetap queue-aware — kalau ada
+// dadu rolling, tunggu settled dulu. Dipakai di combat untuk
+// menumpuk narasi player attack + monster attack di box yang sama.
+function appendNarrative(html) {
+  queueOrRun(() => {
+    const el = document.getElementById('narrativeContent');
+    // Wrapper dengan fade-in animation per chunk
+    const wrapper = document.createElement('div');
+    wrapper.className = 'fade-in';
+    wrapper.innerHTML = html;
+    el.appendChild(wrapper);
+    // Scroll narrative ke bawah biar chunk terbaru kelihatan
+    el.scrollTop = el.scrollHeight;
+    // Scroll halaman juga, kalo narrative-nya panjang
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  });
 }
 
 function showChoices(choices) {
+  // Clear langsung biar tombol lama hilang selama dadu rolling
+  // (mencegah user spam click saat queue belum release)
+  document.getElementById('choices').innerHTML = '';
+  queueOrRun(() => renderChoices(choices));
+}
+
+// Bersihkan choices container segera. Dipakai combat.js saat
+// player baru memilih aksi: tombol turn sekarang harus hilang
+// langsung biar nggak bisa di-spam selama animasi.
+function clearChoices() {
+  document.getElementById('choices').innerHTML = '';
+}
+
+// Logika render choices dipisah biar bisa dipanggil instan
+// (tanpa queue) kalau perlu — saat ini cuma dipanggil dari showChoices.
+function renderChoices(choices) {
   const container = document.getElementById('choices');
   container.innerHTML = '';
   choices.forEach((c, i) => {

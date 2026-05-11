@@ -24,64 +24,101 @@ function combat(monsterIdOrObj, onWin) {
   const usedOnceAbilities = new Set();
 
   function combatTurn(action, abilityId) {
-    let log = '';
+    // Disable tombol turn ini segera supaya nggak bisa di-spam
+    // selama dadu rolling.
+    clearChoices();
+
+    // ─── CHUNK 1: PLAYER PHASE ──────────────────────────────
+    // Bangun narasi DoT player + aksi player. Roll dadu (kalau ada)
+    // akan trigger animasi & queue narasi otomatis di sini.
+    let playerLog = '';
 
     // Process player DoT (poison, burn)
-    log += processPlayerStatusEffects(p);
-    if (p.hp <= 0) return playerDeath(log);
+    playerLog += processPlayerStatusEffects(p);
+    updateStatusPanel();
+    if (p.hp <= 0) {
+      // Mati karena DoT sebelum sempat beraksi — render narasinya
+      // dulu baru tampilkan layar kematian.
+      if (playerLog) appendNarrative(playerLog);
+      return playerDeath();
+    }
 
-    // Aksi pemain
+    // Aksi pemain — ini bisa men-trigger animateDiceRoll
     if (action === 'attack') {
-      log += playerAttack(p, m);
+      playerLog += playerAttack(p, m);
     } else if (action === 'ability') {
       const ab = ABILITIES[abilityId];
       p.resource.current -= ab.cost;
       if (ab.once) usedOnceAbilities.add(abilityId);
-      log += ab.use(p, m);
+      playerLog += ab.use(p, m);
     } else if (action === 'flee') {
       const r = rollD20WithMod(p.stats.DEX, 14, 'Flee');
       if (r.success) {
-        log += `<p>Kau berhasil melarikan diri ke kegelapan. <span class="roll">DEX check ${r.total} vs DC 14</span></p>`;
-        showNarrative(log);
+        playerLog += `<p>Kau berhasil melarikan diri ke kegelapan. <span class="roll">DEX check ${r.total} vs DC 14</span></p>`;
+        appendNarrative(playerLog);
         showChoices([{ text: 'Lanjutkan', action: () => goToScene(state.lastSafeScene || 'town') }]);
         return;
       }
-      log += `<p class="failure">Kau gagal kabur — kakimu tersandung. <span class="roll">DEX check ${r.total} vs DC 14</span></p>`;
+      playerLog += `<p class="failure">Kau gagal kabur — kakimu tersandung. <span class="roll">DEX check ${r.total} vs DC 14</span></p>`;
     }
-
-    // Cek kemenangan
-    if (m.hp <= 0) return victory(log);
-
-    // Process monster DoT
-    log += processMonsterStatusEffects(m);
-    if (m.hp <= 0) return victory(log);
-
-    // Giliran monster
-    if (m.statusEffects.stunned > 0) {
-      log += `<p class="buff">${m.name} terhuyung dan kehilangan giliran.</p>`;
-    } else {
-      log += monsterAttack(p, m);
-    }
-
-    // Decrement buff durations
-    decrementBuffs(p);
-    decrementBuffs(m);
-
-    // Regen resource player
-    p.resource.current = Math.min(p.resource.max, p.resource.current + p.resource.regen);
 
     updateStatusPanel();
 
-    if (p.hp <= 0) return playerDeath(log);
+    // Append player chunk — queue-aware, akan tunggu dadu player settled
+    appendNarrative(playerLog);
 
-    log += `<p class="whisper">— ${m.name}: ${m.hp}/${m.maxHp} HP — ${getStatusString(m) !== '—' ? `Status: ${getStatusString(m)} —` : ''}</p>`;
-    showNarrative(log);
-    renderCombatChoices();
+    // Cek kemenangan setelah aksi player (sebelum monster sempat bergerak)
+    if (m.hp <= 0) return victory();
+
+    // ─── CHUNK 2: MONSTER PHASE (deferred sampai chunk 1 selesai) ─────
+    // Penting: kita HARUS menunggu dadu player settled sebelum trigger
+    // dadu monster. Kalau tidak, animateDiceRoll kedua akan reset state
+    // dadu pertama dan callback narasi player ke-skip.
+    whenDiceIdle(() => {
+      let monsterLog = '';
+
+      // Process monster DoT
+      monsterLog += processMonsterStatusEffects(m);
+      if (m.hp <= 0) {
+        // Monster mati karena DoT — render lalu victory
+        appendNarrative(monsterLog);
+        return victory();
+      }
+
+      // Giliran monster (bisa trigger roll dadu lagi)
+      if (m.statusEffects.stunned > 0) {
+        monsterLog += `<p class="buff">${m.name} terhuyung dan kehilangan giliran.</p>`;
+      } else {
+        monsterLog += monsterAttack(p, m);
+      }
+
+      // Decrement buff durations
+      decrementBuffs(p);
+      decrementBuffs(m);
+
+      // Regen resource player
+      p.resource.current = Math.min(p.resource.max, p.resource.current + p.resource.regen);
+      updateStatusPanel();
+
+      // Footer status monster
+      monsterLog += `<p class="whisper">— ${m.name}: ${m.hp}/${m.maxHp} HP — ${getStatusString(m) !== '—' ? `Status: ${getStatusString(m)} —` : ''}</p>`;
+
+      // Append monster chunk — queue-aware, tunggu dadu monster settled
+      appendNarrative(monsterLog);
+
+      if (p.hp <= 0) return playerDeath();
+
+      // Render tombol turn berikutnya — juga queue-aware,
+      // akan muncul setelah semua dadu turn ini settled.
+      renderCombatChoices();
+    });
   }
 
-  function victory(log) {
-    log += `<p class="success">✦ ${m.name} jatuh, tidak bergerak lagi.</p>`;
-    log += `<p class="loot">Kau memperoleh ${m.xp} XP${m.gold ? ` dan ${m.gold} keping emas` : ''}.</p>`;
+  function victory() {
+    const log = `
+      <p class="success">✦ ${m.name} jatuh, tidak bergerak lagi.</p>
+      <p class="loot">Kau memperoleh ${m.xp} XP${m.gold ? ` dan ${m.gold} keping emas` : ''}.</p>
+    `;
     gainXP(m.xp);
     p.gold += m.gold || 0;
     // Restore separuh resource setelah combat
@@ -89,15 +126,14 @@ function combat(monsterIdOrObj, onWin) {
     // Reset status effects ringan setelah combat
     p.statusEffects = {};
     updateStatusPanel();
-    showNarrative(log);
+    appendNarrative(log);
     showChoices([{ text: 'Lanjutkan perjalanan', action: onWin }]);
   }
 
-  function playerDeath(log) {
+  function playerDeath() {
     p.hp = 0;
     updateStatusPanel();
-    log += `<p class="failure">✦ Pandanganmu meredup. Kau tumbang di lantai dingin...</p>`;
-    showNarrative(log);
+    appendNarrative(`<p class="failure">✦ Pandanganmu meredup. Kau tumbang di lantai dingin...</p>`);
     showChoices([{ text: 'Mulai lagi', action: () => init() }]);
   }
 

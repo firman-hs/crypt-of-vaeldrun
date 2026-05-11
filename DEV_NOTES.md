@@ -4,7 +4,7 @@
 
 **Project**: The Crypt of Vael'drun  
 **Tipe**: Text-adventure RPG, browser-based, vanilla JS  
-**Last updated**: 2026-05-10
+**Last updated**: 2026-05-11
 
 ---
 
@@ -136,10 +136,32 @@ Navigasi: `goToScene('sceneId')`.
   - Auto-trigger animasi via `dice.js`
   - Auto-log ke `state.rollLog`
 
+### Dice-Aware Narrative Queue (sejak v2026-05-11)
+Untuk bikin flow turn-based "roll dulu → animasi → baru narasi", `dice.js` expose dua API:
+- `isDiceBusy()` → boolean
+- `whenDiceIdle(callback)` → jalan instan kalau idle, atau diqueue kalau busy
+
+Di `core.js`, `showNarrative`, `appendNarrative`, dan `showChoices` semuanya **queue-aware** — otomatis tunggu `whenDiceIdle`. Tidak ada perubahan API untuk caller scenes.
+
+**API baru:**
+- `appendNarrative(html)` → append chunk ke narrative box (dipakai combat untuk turn-based feel). Queue-aware.
+- `clearChoices()` → bersihkan tombol seketika (dipakai combat saat player baru memilih aksi, biar tidak bisa di-spam selama animasi)
+
+**Konstanta timing** di `dice.js`:
+- `ROLL_DURATION = 1000ms` (durasi spinning)
+- `POST_SETTLE_DELAY = 400ms` (jeda baca angka sebelum release queue)
+- `VISIBLE_AFTER_SETTLE = 2500ms` (dadu tetap kelihatan setelah settled)
+
+Klik dadu = skip waiting (langsung release queue + sembunyikan dadu).
+
 ### Combat
 - Entry: `combat('monsterId', onWinCallback)` atau `combat({...customMonster}, callback)`
-- Tiap turn: process player DoT → aksi player → process monster DoT → aksi monster → decrement buffs → regen resource
+- Tiap turn sequential dengan jeda dadu:
+  1. **Player chunk:** DoT player → aksi player (bisa trigger roll) → `appendNarrative`
+  2. **Monster chunk** (di-defer via `whenDiceIdle`): DoT monster → aksi monster (bisa trigger roll) → `appendNarrative`
+  3. **Render choices** untuk turn berikutnya
 - Setelah menang: heal separuh resource, reset status effects
+- **Penting:** monster phase HARUS di dalam `whenDiceIdle(...)` callback. Kalau tidak, dadu monster akan reset state dadu player dan callback narasi player ke-skip.
 
 ### Status Effects
 DoT (damage over turn): `poisoned` (1d4), `burning` (1d6)  
@@ -163,6 +185,9 @@ Threshold: `level × 100`. Per level up: +4 max HP, +1 max resource, full restor
 | Town sebagai hub (bukan linear) | Memberi sense of "world" + persiapan save/load + tempat heal. |
 | Animasi dadu non-invasive (hook di `rollD20WithMod`) | Bisa di-disable tanpa nyentuh kode game lainnya. |
 | Magmaforge AC -2 saat scout sukses | Memberi reward untuk strategy, bukan cuma damage bonus. |
+| Narrative queue-aware (sejak 2026-05-11) | `showNarrative`/`appendNarrative` otomatis tunggu dadu settled. Bikin combat terasa turn-based tanpa refactor caller. Trade-off: tiap turn jadi ~3 detik lebih lama, tapi user request fitur ini. |
+| Combat pakai `appendNarrative` (chunk), bukan single `showNarrative` | Player & monster phase masuk box yang sama, scroll naik — konteks turn tidak hilang. Match konvensi turn-based feel. |
+| Monster phase di-wrap `whenDiceIdle()` | Dadu monster nggak boleh trigger selama dadu player masih busy — kalau tidak, state callback player ke-skip. |
 
 ---
 
@@ -177,8 +202,10 @@ Threshold: `level × 100`. Per level up: +4 max HP, +1 max resource, full restor
 - [x] Multiple endings per dungeon (combat/parley/stealth)
 - [x] Animated d20 SVG dengan crit/fumble visuals
 - [x] README + GitHub Pages deployment
+- [x] **Dice-aware narrative queue** (turn-based combat dengan animasi dadu sequential)
 
 ### 📋 Backlog (urutan prioritas)
+- [ ] **Speed setting** — pengaturan kecepatan animasi dadu (slow/normal/fast/instant) di settings menu
 - [ ] **Save/Load** — auto-save di localStorage tiap masuk scene aman
 - [ ] **Equipment system** — drop loot dari boss, armor/weapon slots dengan stat bonus
 - [ ] **Shop di town** — Borric jual senjata, healer jual potion

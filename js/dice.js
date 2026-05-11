@@ -3,6 +3,11 @@
    ============================================================
    Menampilkan dadu d20 SVG yang berputar lalu berhenti di angka.
    Dipanggil otomatis dari rollD20WithMod() di core.js.
+
+   API tambahan:
+     - isDiceBusy()              → boolean, true selama rolling/settling
+     - whenDiceIdle(callback)    → jalankan callback saat dadu idle
+                                   (atau langsung kalau memang sudah idle)
    ============================================================ */
 
 // SVG path untuk d20 (icosahedron flat representation)
@@ -60,6 +65,44 @@ const D20_SVG = `
 
 let diceContainer = null;
 let dismissTimer = null;
+let settleTimer = null;       // timer untuk transisi rolling → settled
+let releaseTimer = null;      // timer untuk delay 0.4s setelah settled sebelum release queue
+
+// ─── DICE STATE TRACKING ─────────────────────────────────────
+// Dadu "busy" sejak mulai rolling sampai SETTLED + delay 0.4s.
+// Selama busy, callback narrative ditahan di idleCallbacks.
+let diceBusy = false;
+const idleCallbacks = [];
+
+// Berapa lama (ms) menunggu setelah dadu settled sebelum
+// release narrative queue. Memberi user waktu baca angka.
+const POST_SETTLE_DELAY = 400;
+const ROLL_DURATION = 1000;        // durasi rolling animation
+const VISIBLE_AFTER_SETTLE = 2500; // dadu tetap kelihatan setelah settled
+
+
+function isDiceBusy() {
+  return diceBusy;
+}
+
+function whenDiceIdle(callback) {
+  if (!diceBusy) {
+    callback();
+  } else {
+    idleCallbacks.push(callback);
+  }
+}
+
+function releaseIdleCallbacks() {
+  diceBusy = false;
+  // Salin & kosongkan dulu, baru jalankan — agar kalau callback
+  // memicu roll baru, queue baru tidak tercampur dengan yang lama.
+  const pending = idleCallbacks.splice(0);
+  pending.forEach(cb => {
+    try { cb(); } catch (e) { console.error('Dice idle callback error:', e); }
+  });
+}
+
 
 function ensureDiceContainer() {
   if (diceContainer) return diceContainer;
@@ -75,11 +118,15 @@ function ensureDiceContainer() {
 
 function animateDiceRoll(result, isCrit, isFumble) {
   const container = ensureDiceContainer();
-  const svg = container.querySelector('svg');
   const numberEl = container.querySelector('.dice-number');
   
   // Clear timer dari roll sebelumnya
   if (dismissTimer) clearTimeout(dismissTimer);
+  if (settleTimer) clearTimeout(settleTimer);
+  if (releaseTimer) clearTimeout(releaseTimer);
+  
+  // Mark busy: callback narrative berikutnya akan menunggu
+  diceBusy = true;
   
   // Reset state
   container.classList.remove('crit', 'fumble', 'visible', 'settled');
@@ -101,7 +148,7 @@ function animateDiceRoll(result, isCrit, isFumble) {
   }, 100);
   
   // Setelah 1 detik: hentikan ticker, tampilkan hasil final
-  setTimeout(() => {
+  settleTimer = setTimeout(() => {
     clearInterval(ticker);
     container.classList.remove('rolling');
     container.classList.add('settled');
@@ -111,17 +158,28 @@ function animateDiceRoll(result, isCrit, isFumble) {
     if (isCrit) container.classList.add('crit');
     if (isFumble) container.classList.add('fumble');
     
-    // Auto-dismiss setelah 2.5 detik
+    // Setelah delay singkat (POST_SETTLE_DELAY), release narrative queue.
+    // Dadu tetap kelihatan, tapi narrative sudah boleh muncul.
+    releaseTimer = setTimeout(() => {
+      releaseIdleCallbacks();
+    }, POST_SETTLE_DELAY);
+    
+    // Auto-dismiss visual dadu setelah lebih lama (2.5 detik)
     dismissTimer = setTimeout(() => {
       container.classList.remove('visible');
-    }, 2500);
-  }, 1000);
+    }, VISIBLE_AFTER_SETTLE);
+  }, ROLL_DURATION);
 }
 
-// Allow user to dismiss dice manually with click
+// Allow user to dismiss dice manually with click.
+// Klik dadu = skip waiting: release queue langsung + sembunyikan dadu.
 document.addEventListener('click', (e) => {
   if (diceContainer && diceContainer.classList.contains('visible') && diceContainer.contains(e.target)) {
     if (dismissTimer) clearTimeout(dismissTimer);
+    if (settleTimer) clearTimeout(settleTimer);
+    if (releaseTimer) clearTimeout(releaseTimer);
     diceContainer.classList.remove('visible');
+    // Kalau masih ada callback yang menunggu, jalankan sekarang
+    if (diceBusy) releaseIdleCallbacks();
   }
 });
