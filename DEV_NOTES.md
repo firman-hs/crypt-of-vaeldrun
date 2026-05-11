@@ -6,6 +6,8 @@
 **Tipe**: Text-adventure RPG, browser-based, vanilla JS  
 **Last updated**: 2026-05-11
 
+> **Phase 1 refactor (2026-05-11)**: Project sudah dimigrasi ke **ES Modules** dengan struktur folder baru (`engine/`, `data/`, `scenes/`) dan type-checking via JSDoc + `tsconfig.json`. Lihat section "Struktur File" dan "Decisions History" untuk detail.
+
 ---
 
 ## 🎯 Visi Project
@@ -24,32 +26,59 @@ Sebuah text-adventure RPG ala D&D dengan estetika dark fantasy grimoire. Fokus p
 
 ```
 crypt-of-vaeldrun/
-├── index.html              # entry point, urutan script penting
+├── index.html              # entry point — load main.js sebagai ES module
 ├── style.css               # semua styling, dark fantasy theme
+├── tsconfig.json           # config untuk JSDoc type-checking (no build step)
 ├── README.md               # public-facing docs
 ├── DEV_NOTES.md            # file ini (internal)
 └── js/
-    ├── core.js             # foundation: state, dice, UI, status effects
-    ├── dice.js             # animasi d20 SVG
-    ├── classes.js          # 3 class + 9 abilities definition
-    ├── monsters.js         # database monster + getMonster() factory
-    ├── combat.js           # turn-based combat engine
-    ├── main.js             # scene router, character creation, init
-    └── scenes/
-        ├── town.js         # Aethelford hub
-        ├── crypt.js        # Crypt of Vael'drun
-        └── forge.js        # Forge of Korr-Dun
+    ├── main.js             # entry: import semua scene, build registry, init
+    ├── engine/             # foundation systems
+    │   ├── types.js        # JSDoc type definitions (Player, Monster, dll)
+    │   ├── state.js        # global state object + resetState()
+    │   ├── dice.js         # roll math + animasi d20 + queue API
+    │   ├── status-effects.js  # DoT, decrement buffs, format string
+    │   ├── ui.js           # showNarrative, showChoices, updateStatusPanel
+    │   └── combat.js       # turn-based combat engine
+    ├── data/               # definisi statis (jarang diubah)
+    │   ├── classes.js      # 3 class definition
+    │   ├── abilities.js    # 9 ability (dipisah dari classes — Phase 1)
+    │   └── monsters.js     # database monster + getMonster() factory
+    └── scenes/             # konten cerita
+        ├── start.js        # character creation + ability intro
+        ├── town.js         # Aethelford hub (export townScenes)
+        ├── crypt.js        # Crypt of Vael'drun (export cryptScenes)
+        └── forge.js        # Forge of Korr-Dun (export forgeScenes)
 ```
 
-### Urutan Loading Script (PENTING)
+### Loading: ES Modules native browser
 
-Karena tidak pakai bundler, urutan `<script>` di `index.html` harus benar:
+`index.html` hanya punya **satu** `<script type="module" src="js/main.js">`. Semua dependency di-resolve via `import`/`export` di tiap file. Tidak ada urutan loading manual — browser yang ngatur.
 
+**⚠️ ES Modules butuh local HTTP server.** Tidak bisa double-click `index.html`.
+
+```bash
+# Cara paling cepat:
+python3 -m http.server 8000
+# Buka http://localhost:8000
+
+# Atau pakai live-server (auto-reload):
+npx http-server -c-1 .
 ```
-core.js → dice.js → classes.js → monsters.js → combat.js → scenes/*.js → main.js
-```
 
-`main.js` selalu terakhir karena bergantung pada semua di atasnya.
+GitHub Pages **support natively** — tidak ada konfigurasi tambahan.
+
+### Type Checking (no build step)
+
+`tsconfig.json` sudah disetup dengan `allowJs: true`, `checkJs: true`, `noEmit: true`. Buka project di VSCode dan kamu langsung dapat:
+- IntelliSense untuk semua tipe (Player, Monster, Ability, dll dari `engine/types.js`)
+- Squiggly merah kalau typo nama property atau argumen salah tipe
+- **Tanpa** compile step — tetap pure vanilla JS
+
+Untuk run type check di terminal:
+```bash
+npx -p typescript tsc --noEmit
+```
 
 ---
 
@@ -87,23 +116,55 @@ state.player = {
 };
 ```
 
-### Scene Pattern
+### Scene Pattern (ES Modules)
 
-Semua scene didaftarkan ke `window.__sceneRegistry` (dari tiap file scene), lalu dikumpulkan oleh `main.js` jadi object `scenes`.
+Tiap file scene meng-export sebuah object yang berisi function-function scene-nya:
 
 ```javascript
-const myScenes = {
-  sceneId: () => {
+// js/scenes/myArea.js
+// @ts-check
+import { state } from '../engine/state.js';
+import { showNarrative, showChoices } from '../engine/ui.js';
+import { combat } from '../engine/combat.js';
+import { goToScene } from '../main.js';
+
+/** @type {Object<string, () => void>} */
+export const myAreaScenes = {
+  myScene: () => {
     showNarrative(`<p>Deskripsi...</p>`);
     showChoices([
       { text: 'Pilihan A', action: () => goToScene('next') }
     ]);
   }
 };
-Object.assign(window.__sceneRegistry = window.__sceneRegistry || {}, myScenes);
 ```
 
-Navigasi: `goToScene('sceneId')`.
+Kemudian di `main.js`, scene di-spread ke registry:
+
+```javascript
+// js/main.js
+import { myAreaScenes } from './scenes/myArea.js';
+
+const scenes = {
+  start,
+  ...townScenes,
+  ...cryptScenes,
+  ...forgeScenes,
+  ...myAreaScenes,   // ← tambah di sini
+};
+```
+
+Navigasi: `goToScene('myScene')`.
+
+### Circular Dependency Workaround
+
+`combat.js` butuh `goToScene` & `init` (untuk handle flee & death), tapi keduanya di `main.js` yang mengimport `combat.js` lewat scenes. Untuk hindari circular import yang fragile:
+
+- `combat.js` export `setNavigation(goToSceneFn, initFn)`.
+- `main.js` panggil `setNavigation(goToScene, init)` saat boot.
+- Combat menyimpan reference ini di module-scope variable.
+
+Pattern ini disebut **dependency injection** dan lebih clean daripada hack `window.__game`.
 
 ---
 
@@ -136,32 +197,10 @@ Navigasi: `goToScene('sceneId')`.
   - Auto-trigger animasi via `dice.js`
   - Auto-log ke `state.rollLog`
 
-### Dice-Aware Narrative Queue (sejak v2026-05-11)
-Untuk bikin flow turn-based "roll dulu → animasi → baru narasi", `dice.js` expose dua API:
-- `isDiceBusy()` → boolean
-- `whenDiceIdle(callback)` → jalan instan kalau idle, atau diqueue kalau busy
-
-Di `core.js`, `showNarrative`, `appendNarrative`, dan `showChoices` semuanya **queue-aware** — otomatis tunggu `whenDiceIdle`. Tidak ada perubahan API untuk caller scenes.
-
-**API baru:**
-- `appendNarrative(html)` → append chunk ke narrative box (dipakai combat untuk turn-based feel). Queue-aware.
-- `clearChoices()` → bersihkan tombol seketika (dipakai combat saat player baru memilih aksi, biar tidak bisa di-spam selama animasi)
-
-**Konstanta timing** di `dice.js`:
-- `ROLL_DURATION = 1000ms` (durasi spinning)
-- `POST_SETTLE_DELAY = 400ms` (jeda baca angka sebelum release queue)
-- `VISIBLE_AFTER_SETTLE = 2500ms` (dadu tetap kelihatan setelah settled)
-
-Klik dadu = skip waiting (langsung release queue + sembunyikan dadu).
-
 ### Combat
 - Entry: `combat('monsterId', onWinCallback)` atau `combat({...customMonster}, callback)`
-- Tiap turn sequential dengan jeda dadu:
-  1. **Player chunk:** DoT player → aksi player (bisa trigger roll) → `appendNarrative`
-  2. **Monster chunk** (di-defer via `whenDiceIdle`): DoT monster → aksi monster (bisa trigger roll) → `appendNarrative`
-  3. **Render choices** untuk turn berikutnya
+- Tiap turn: process player DoT → aksi player → process monster DoT → aksi monster → decrement buffs → regen resource
 - Setelah menang: heal separuh resource, reset status effects
-- **Penting:** monster phase HARUS di dalam `whenDiceIdle(...)` callback. Kalau tidak, dadu monster akan reset state dadu player dan callback narasi player ke-skip.
 
 ### Status Effects
 DoT (damage over turn): `poisoned` (1d4), `burning` (1d6)  
@@ -181,13 +220,15 @@ Threshold: `level × 100`. Per level up: +4 max HP, +1 max resource, full restor
 | Resource per class beda nama (Stamina/Mana/Focus) | Flavor — tiap class terasa unik, padahal mekaniknya sama. |
 | 3 ability per class (bukan 5+) | Cukup untuk variety, tidak overwhelming UI di text-based. |
 | Multi-file dari tadinya satu | Sudah 900+ baris, makin susah maintain. Sekarang scalable. |
-| `window.__sceneRegistry` (bukan ES modules) | Vanilla JS tanpa bundler — module pattern via global namespace. |
+| ~~`window.__sceneRegistry`~~ → **ES Modules** (Phase 1, 2026-05-11) | Pattern global namespace gantian ke import/export native. Imports eksplisit di tiap file = pembaca tahu dari mana semua dependency datang. |
+| `engine/`, `data/`, `scenes/` folder split (Phase 1) | Foundation systems (engine) dipisah dari konten (data + scenes). Engine jarang berubah, scenes terus tumbuh — pemisahan logikal. |
+| `abilities.js` dipisah dari `classes.js` (Phase 1) | Class jarang ditambah (3 → mungkin 6 total), abilities akan terus tumbuh (9 → 30+). Berbeda growth pattern = beda file. |
+| JSDoc + tsconfig.json (no build step) (Phase 1) | Dapat type-checking penuh di VSCode tanpa compile step. Tetap pure vanilla JS, deploy ke GitHub Pages tanpa transformasi. |
+| `setNavigation()` dependency injection di combat | Combat butuh akses `goToScene`/`init` dari main.js, tapi main.js juga import combat lewat scenes. Inject lewat setter = no circular import yang fragile. |
 | Town sebagai hub (bukan linear) | Memberi sense of "world" + persiapan save/load + tempat heal. |
 | Animasi dadu non-invasive (hook di `rollD20WithMod`) | Bisa di-disable tanpa nyentuh kode game lainnya. |
+| Dice-aware narrative queue | `whenDiceIdle()` di dice.js + queue-aware showNarrative/showChoices = animasi dadu nggak fight dengan narasi. Turn-based feel. |
 | Magmaforge AC -2 saat scout sukses | Memberi reward untuk strategy, bukan cuma damage bonus. |
-| Narrative queue-aware (sejak 2026-05-11) | `showNarrative`/`appendNarrative` otomatis tunggu dadu settled. Bikin combat terasa turn-based tanpa refactor caller. Trade-off: tiap turn jadi ~3 detik lebih lama, tapi user request fitur ini. |
-| Combat pakai `appendNarrative` (chunk), bukan single `showNarrative` | Player & monster phase masuk box yang sama, scroll naik — konteks turn tidak hilang. Match konvensi turn-based feel. |
-| Monster phase di-wrap `whenDiceIdle()` | Dadu monster nggak boleh trigger selama dadu player masih busy — kalau tidak, state callback player ke-skip. |
 
 ---
 
@@ -201,11 +242,11 @@ Threshold: `level × 100`. Per level up: +4 max HP, +1 max resource, full restor
 - [x] 2 dungeon: Crypt of Vael'drun + Forge of Korr-Dun
 - [x] Multiple endings per dungeon (combat/parley/stealth)
 - [x] Animated d20 SVG dengan crit/fumble visuals
+- [x] Dice-aware narrative queue (animasi dadu sync dengan narasi)
+- [x] **Phase 1 (2026-05-11)**: Migrasi ke ES Modules + struktur folder baru + JSDoc types + tsconfig
 - [x] README + GitHub Pages deployment
-- [x] **Dice-aware narrative queue** (turn-based combat dengan animasi dadu sequential)
 
 ### 📋 Backlog (urutan prioritas)
-- [ ] **Speed setting** — pengaturan kecepatan animasi dadu (slow/normal/fast/instant) di settings menu
 - [ ] **Save/Load** — auto-save di localStorage tiap masuk scene aman
 - [ ] **Equipment system** — drop loot dari boss, armor/weapon slots dengan stat bonus
 - [ ] **Shop di town** — Borric jual senjata, healer jual potion
@@ -230,12 +271,14 @@ Threshold: `level × 100`. Per level up: +4 max HP, +1 max resource, full restor
 
 ### Tambah Scene Baru
 
-1. Pilih file scene yang relevan (`scenes/town.js`, `scenes/crypt.js`, dll) atau buat baru
-2. Tambahkan ke object scene:
+1. Pilih file scene yang relevan (`scenes/town.js`, `scenes/crypt.js`, dll) atau buat file baru
+2. Tambahkan ke object scene yang di-export:
    ```javascript
-   const myScenes = {
+   // scenes/crypt.js (contoh)
+   export const cryptScenes = {
+     // ... scene lain
      myNewScene: () => {
-       state.lastSafeScene = 'myNewScene';  // jika ini scene aman
+       state.lastSafeScene = 'myNewScene';  // jika scene aman
        showNarrative(`
          <p class="scene-title">Judul Scene</p>
          <p>Deskripsi narasi...</p>
@@ -247,13 +290,15 @@ Threshold: `level × 100`. Per level up: +4 max HP, +1 max resource, full restor
        ]);
      }
    };
-   Object.assign(window.__sceneRegistry = window.__sceneRegistry || {}, myScenes);
    ```
-3. Kalau file baru, daftarkan di `index.html` (sebelum `main.js`)
+3. Pastikan semua function yang dipakai (`showNarrative`, `combat`, `goToScene`, dll) sudah di-import di top of file
+4. Kalau file baru, di `main.js`:
+   - Tambah `import { newAreaScenes } from './scenes/newArea.js';`
+   - Tambah `...newAreaScenes,` di dalam object `scenes`
 
 ### Tambah Monster Baru
 
-Edit `js/monsters.js`:
+Edit `js/data/monsters.js`, tambah ke `MONSTERS`:
 ```javascript
 namaMonster: {
   name: 'Display Name',
@@ -262,9 +307,11 @@ namaMonster: {
 }
 ```
 
+Type-checker akan otomatis verify struktur sesuai `MonsterTemplate`.
+
 ### Tambah Ability Baru
 
-Edit `js/classes.js`, tambahkan ke `ABILITIES`:
+Edit `js/data/abilities.js`, tambah ke `ABILITIES`:
 ```javascript
 namaAbility: {
   name: 'Display Name',
@@ -278,21 +325,30 @@ namaAbility: {
   }
 }
 ```
-Lalu masukkan ID-nya ke array `abilities` di class yang relevan.
+Lalu masukkan ID-nya ke array `abilities` di class yang relevan (`js/data/classes.js`).
 
 ### Tambah Class Baru
 
-1. Tambah definisi di `CLASSES` (`js/classes.js`)
-2. Bikin 3 ability baru di `ABILITIES`
-3. Tambah CSS class di `style.css`:
+1. Tambah definisi di `CLASSES` (`js/data/classes.js`)
+2. Bikin 3 ability baru di `ABILITIES` (`js/data/abilities.js`)
+3. Tambah `ClassId` di `js/engine/types.js`:
+   ```javascript
+   /** @typedef {'warrior' | 'mage' | 'rogue' | 'newClass'} ClassId */
+   ```
+4. Tambah CSS class di `style.css`:
    - `body.class-namabaru .resource-fill { background: ... }`
    - `.class-card.class-namabaru .resource-tag { color: ... }`
 
 ### Tambah Dungeon Baru
 
 1. Buat file `js/scenes/namaDungeon.js`
-2. Buat scenes dengan prefix konsisten (misal `grove*`)
-3. Daftarkan di `index.html` sebelum `main.js`
+2. Export object scenes dengan prefix konsisten (misal semua scene `grove*` di `groveScenes`)
+3. Daftarkan di `js/main.js`:
+   ```javascript
+   import { groveScenes } from './scenes/grove.js';
+   // ...
+   const scenes = { ...townScenes, ...cryptScenes, ...forgeScenes, ...groveScenes };
+   ```
 4. Tambahkan entry di world map (`scenes/town.js` → `worldMap`)
 5. Tambahkan flag `flags.namaDungeonCleared`
 
@@ -303,6 +359,7 @@ Lalu masukkan ID-nya ke array `abilities` di class yang relevan.
 - [ ] Resource regen saat di town: setelah combat selesai, current resource pulih separuh, tapi saat masuk scene baru di luar combat tidak ada regen passive. Masih oke untuk sekarang karena ada inn.
 - [ ] Beberapa skill check di luar combat tidak punya konsekuensi DEX/INT/STR yang seimbang antar class — Mage selalu buruk di STR check, etc. Mungkin perlu alternative paths per scene.
 - [ ] Animasi dadu di mobile mungkin masih agak menutupi tombol di layar sangat kecil (<360px).
+- [ ] **ES Modules butuh server** — double-click `index.html` tidak akan jalan. Onboarding kontributor baru harus diingatkan untuk pakai `python3 -m http.server` atau live-server.
 
 ---
 
@@ -325,11 +382,12 @@ File yang relevan: [LIST_FILE]
 
 | Topik | Files |
 |-------|-------|
-| Scene/dungeon baru | `core.js`, `combat.js`, `monsters.js`, `scenes/*.js` (sebagai contoh), `DEV_NOTES.md` |
-| Combat/ability system | `core.js`, `combat.js`, `classes.js`, `DEV_NOTES.md` |
-| UI/visual/CSS | `index.html`, `style.css`, `dice.js` (kalau animasi), `DEV_NOTES.md` |
-| Class baru | `classes.js`, `combat.js`, `DEV_NOTES.md` |
-| System (save/load, dll) | `core.js`, `main.js`, `DEV_NOTES.md` |
+| Scene/dungeon baru | `js/engine/combat.js`, `js/data/monsters.js`, `js/scenes/*.js` (sebagai contoh), `js/main.js`, `DEV_NOTES.md` |
+| Combat/ability system | `js/engine/combat.js`, `js/data/abilities.js`, `js/data/classes.js`, `DEV_NOTES.md` |
+| UI/visual/CSS | `index.html`, `style.css`, `js/engine/ui.js`, `js/engine/dice.js`, `DEV_NOTES.md` |
+| Class baru | `js/data/classes.js`, `js/data/abilities.js`, `js/engine/types.js`, `style.css`, `DEV_NOTES.md` |
+| System (save/load, dll) | `js/engine/state.js`, `js/main.js`, `DEV_NOTES.md` |
+| Type definitions | `js/engine/types.js`, `tsconfig.json` |
 
 ---
 

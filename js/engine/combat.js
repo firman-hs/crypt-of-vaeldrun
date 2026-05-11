@@ -1,17 +1,75 @@
+// @ts-check
 /* ============================================================
    COMBAT.JS — Combat Engine
    ============================================================
-   Berisi:
-     - combat(monster, onWin) — entry point combat
-     - playerAttack, monsterAttack
-     - usedOnceAbilities tracker per combat
-   
-   Dependencies: core.js, classes.js (ABILITIES)
+   Turn-based combat dengan dice-aware narrative queue.
+
+   Flow tiap turn:
+     1. Player phase (DoT + aksi) → appendNarrative
+     2. Tunggu dadu settled (whenDiceIdle)
+     3. Monster phase (DoT + serangan) → appendNarrative
+     4. Render tombol turn berikutnya
+
+   Entry: combat(monsterIdOrObj, onWinCallback)
+
+   Catatan dependency: combat butuh akses ke goToScene & init
+   (untuk flee & death), tapi keduanya didefinisikan di main.js
+   yang juga import combat (via scenes). Untuk hindari circular
+   import, main.js inject fungsi-fungsi ini via setNavigation()
+   saat startup.
    ============================================================ */
 
-function combat(monsterIdOrObj, onWin) {
+import { state } from './state.js';
+import { roll, rollD20WithMod, whenDiceIdle } from './dice.js';
+import {
+  showNarrative, appendNarrative, showChoices, clearChoices,
+  updateStatusPanel, gainXP
+} from './ui.js';
+import {
+  processPlayerStatusEffects, processMonsterStatusEffects,
+  decrementBuffs, getStatusString
+} from './status-effects.js';
+import { ABILITIES } from '../data/abilities.js';
+import { getMonster } from '../data/monsters.js';
+
+/** @typedef {import('./types.js').Player} Player */
+/** @typedef {import('./types.js').Monster} Monster */
+
+
+// ─── Dependency injection untuk navigation ─────────────────
+// main.js akan panggil setNavigation() saat startup.
+
+/** @type {((name: string) => void) | null} */
+let _goToScene = null;
+/** @type {(() => void) | null} */
+let _init = null;
+
+/**
+ * Dipanggil oleh main.js untuk inject navigation functions.
+ * @param {(name: string) => void} goToSceneFn
+ * @param {() => void} initFn
+ */
+export function setNavigation(goToSceneFn, initFn) {
+  _goToScene = goToSceneFn;
+  _init = initFn;
+}
+
+
+/**
+ * Mulai pertempuran. Bisa terima monster ID (string) atau
+ * custom Monster object (untuk modifier khusus seperti scout).
+ *
+ * @param {string | Monster} monsterIdOrObj
+ * @param {() => void} onWin
+ */
+export function combat(monsterIdOrObj, onWin) {
   const p = state.player;
-  // Accept either monster ID string atau full monster object (untuk kustomisasi)
+  if (!p) {
+    showNarrative(`<p class="failure">Error: tidak ada player aktif.</p>`);
+    return;
+  }
+
+  /** @type {Monster | null} */
   const m = typeof monsterIdOrObj === 'string'
     ? getMonster(monsterIdOrObj)
     : { ...monsterIdOrObj, hp: monsterIdOrObj.maxHp, statusEffects: monsterIdOrObj.statusEffects || {} };
@@ -21,32 +79,31 @@ function combat(monsterIdOrObj, onWin) {
     return;
   }
 
+  /** @type {Set<string>} */
   const usedOnceAbilities = new Set();
 
+  /**
+   * Eksekusi satu turn combat dengan aksi pemain.
+   * @param {'attack' | 'ability' | 'flee'} action
+   * @param {string} [abilityId]
+   */
   function combatTurn(action, abilityId) {
     // Disable tombol turn ini segera supaya nggak bisa di-spam
-    // selama dadu rolling.
     clearChoices();
 
     // ─── CHUNK 1: PLAYER PHASE ──────────────────────────────
-    // Bangun narasi DoT player + aksi player. Roll dadu (kalau ada)
-    // akan trigger animasi & queue narasi otomatis di sini.
     let playerLog = '';
 
-    // Process player DoT (poison, burn)
     playerLog += processPlayerStatusEffects(p);
     updateStatusPanel();
     if (p.hp <= 0) {
-      // Mati karena DoT sebelum sempat beraksi — render narasinya
-      // dulu baru tampilkan layar kematian.
       if (playerLog) appendNarrative(playerLog);
       return playerDeath();
     }
 
-    // Aksi pemain — ini bisa men-trigger animateDiceRoll
     if (action === 'attack') {
       playerLog += playerAttack(p, m);
-    } else if (action === 'ability') {
+    } else if (action === 'ability' && abilityId) {
       const ab = ABILITIES[abilityId];
       p.resource.current -= ab.cost;
       if (ab.once) usedOnceAbilities.add(abilityId);
@@ -56,60 +113,45 @@ function combat(monsterIdOrObj, onWin) {
       if (r.success) {
         playerLog += `<p>Kau berhasil melarikan diri ke kegelapan. <span class="roll">DEX check ${r.total} vs DC 14</span></p>`;
         appendNarrative(playerLog);
-        showChoices([{ text: 'Lanjutkan', action: () => goToScene(state.lastSafeScene || 'town') }]);
+        showChoices([{ text: 'Lanjutkan', action: () => fleeBackToSafe() }]);
         return;
       }
       playerLog += `<p class="failure">Kau gagal kabur — kakimu tersandung. <span class="roll">DEX check ${r.total} vs DC 14</span></p>`;
     }
 
     updateStatusPanel();
-
-    // Append player chunk — queue-aware, akan tunggu dadu player settled
     appendNarrative(playerLog);
 
-    // Cek kemenangan setelah aksi player (sebelum monster sempat bergerak)
     if (m.hp <= 0) return victory();
 
-    // ─── CHUNK 2: MONSTER PHASE (deferred sampai chunk 1 selesai) ─────
-    // Penting: kita HARUS menunggu dadu player settled sebelum trigger
-    // dadu monster. Kalau tidak, animateDiceRoll kedua akan reset state
-    // dadu pertama dan callback narasi player ke-skip.
+    // ─── CHUNK 2: MONSTER PHASE (deferred sampai dadu player settled) ─
     whenDiceIdle(() => {
       let monsterLog = '';
 
-      // Process monster DoT
       monsterLog += processMonsterStatusEffects(m);
       if (m.hp <= 0) {
-        // Monster mati karena DoT — render lalu victory
         appendNarrative(monsterLog);
         return victory();
       }
 
-      // Giliran monster (bisa trigger roll dadu lagi)
-      if (m.statusEffects.stunned > 0) {
+      if (m.statusEffects.stunned && m.statusEffects.stunned > 0) {
         monsterLog += `<p class="buff">${m.name} terhuyung dan kehilangan giliran.</p>`;
       } else {
         monsterLog += monsterAttack(p, m);
       }
 
-      // Decrement buff durations
       decrementBuffs(p);
       decrementBuffs(m);
 
-      // Regen resource player
       p.resource.current = Math.min(p.resource.max, p.resource.current + p.resource.regen);
       updateStatusPanel();
 
-      // Footer status monster
-      monsterLog += `<p class="whisper">— ${m.name}: ${m.hp}/${m.maxHp} HP — ${getStatusString(m) !== '—' ? `Status: ${getStatusString(m)} —` : ''}</p>`;
-
-      // Append monster chunk — queue-aware, tunggu dadu monster settled
+      const statusStr = getStatusString(m);
+      monsterLog += `<p class="whisper">— ${m.name}: ${m.hp}/${m.maxHp} HP — ${statusStr !== '—' ? `Status: ${statusStr} —` : ''}</p>`;
       appendNarrative(monsterLog);
 
       if (p.hp <= 0) return playerDeath();
 
-      // Render tombol turn berikutnya — juga queue-aware,
-      // akan muncul setelah semua dadu turn ini settled.
       renderCombatChoices();
     });
   }
@@ -121,9 +163,7 @@ function combat(monsterIdOrObj, onWin) {
     `;
     gainXP(m.xp);
     p.gold += m.gold || 0;
-    // Restore separuh resource setelah combat
     p.resource.current = Math.min(p.resource.max, p.resource.current + Math.ceil(p.resource.max / 2));
-    // Reset status effects ringan setelah combat
     p.statusEffects = {};
     updateStatusPanel();
     appendNarrative(log);
@@ -134,10 +174,19 @@ function combat(monsterIdOrObj, onWin) {
     p.hp = 0;
     updateStatusPanel();
     appendNarrative(`<p class="failure">✦ Pandanganmu meredup. Kau tumbang di lantai dingin...</p>`);
-    showChoices([{ text: 'Mulai lagi', action: () => init() }]);
+    showChoices([{
+      text: 'Mulai lagi',
+      action: () => _init && _init()
+    }]);
+  }
+
+  function fleeBackToSafe() {
+    const target = state.lastSafeScene || 'town';
+    if (_goToScene) _goToScene(target);
   }
 
   function renderCombatChoices() {
+    /** @type {import('./types.js').Choice[]} */
     const choices = [
       { text: `Serang dengan ${p.weapon.name}`, action: () => combatTurn('attack') }
     ];
@@ -145,7 +194,7 @@ function combat(monsterIdOrObj, onWin) {
     p.abilities.forEach(abId => {
       const ab = ABILITIES[abId];
       const cantAfford = p.resource.current < ab.cost;
-      const usedUp = ab.once && usedOnceAbilities.has(abId);
+      const usedUp = ab.once === true && usedOnceAbilities.has(abId);
       choices.push({
         text: ab.name,
         cost: ab.cost,
@@ -155,7 +204,11 @@ function combat(monsterIdOrObj, onWin) {
       });
     });
 
-    choices.push({ text: 'Coba melarikan diri', hint: '— DEX check DC 14', action: () => combatTurn('flee') });
+    choices.push({
+      text: 'Coba melarikan diri',
+      hint: '— DEX check DC 14',
+      action: () => combatTurn('flee')
+    });
 
     showChoices(choices);
   }
@@ -170,9 +223,15 @@ function combat(monsterIdOrObj, onWin) {
 }
 
 
+/**
+ * Serangan dasar player dengan senjata.
+ * @param {Player} p
+ * @param {Monster} m
+ * @returns {string}
+ */
 function playerAttack(p, m) {
   let mod = p.stats[p.weapon.stat];
-  if (p.statusEffects.advantage > 0) mod += 5;
+  if (p.statusEffects.advantage && p.statusEffects.advantage > 0) mod += 5;
 
   const r = rollD20WithMod(mod, m.ac, `Attack vs ${m.name}`);
   if (r.success) {
@@ -187,17 +246,23 @@ function playerAttack(p, m) {
 }
 
 
+/**
+ * Serangan dasar monster ke player.
+ * @param {Player} p
+ * @param {Monster} m
+ * @returns {string}
+ */
 function monsterAttack(p, m) {
   let toHit = m.toHit;
-  if (m.statusEffects.frosted > 0) toHit -= 2;
-  if (m.statusEffects.blinded > 0) toHit -= 4;
+  if (m.statusEffects.frosted && m.statusEffects.frosted > 0) toHit -= 2;
+  if (m.statusEffects.blinded && m.statusEffects.blinded > 0) toHit -= 4;
 
   const dc = 10 + p.stats.DEX;
   const mr = rollD20WithMod(toHit, dc, `${m.name} attack`);
   if (mr.success) {
     let dmg = roll(m.dmg[1]) + m.dmg[0] - 1;
     if (mr.isCrit) dmg *= 2;
-    if (p.statusEffects.shielded > 0) {
+    if (p.statusEffects.shielded && p.statusEffects.shielded > 0) {
       const reduction = roll(8);
       const original = dmg;
       dmg = Math.max(0, dmg - reduction);

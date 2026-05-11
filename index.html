@@ -59,22 +59,17 @@
 </div>
 
 <!-- ================================================================
-     SCRIPT LOADING ORDER (PENTING!)
-     1. core.js     — state, dice, UI (foundation, harus load duluan)
-     2. classes.js  — class & ability definitions
-     3. monsters.js — monster database
-     4. combat.js   — combat engine (depends on core + classes + monsters)
-     5. scenes/*    — scene definitions per area
-     6. main.js     — world map & init (depends on semuanya)
+     SCRIPT LOADING (ES Modules)
+     ================================================================
+     Hanya satu entry point — main.js. Semua dependency di-resolve
+     otomatis lewat import/export di tiap file.
+
+     Struktur:
+       js/engine/  → foundation (state, dice, ui, combat, status)
+       js/data/    → definisi statis (classes, abilities, monsters)
+       js/scenes/  → konten cerita (start, town, crypt, forge)
+       js/main.js  → entry point (import semua, init game)
      ================================================================ -->
-<script src="js/core.js"></script>
-<script src="js/dice.js"></script>
-<script src="js/classes.js"></script>
-<script src="js/monsters.js"></script>
-<script src="js/combat.js"></script>
-<script src="js/scenes/town.js"></script>
-<script src="js/scenes/crypt.js"></script>
-<script src="js/scenes/forge.js"></script>
-<script src="js/main.js"></script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>

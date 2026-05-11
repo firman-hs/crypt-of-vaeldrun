@@ -43,10 +43,11 @@ Petualangan dark fantasy di mana kau bermain sebagai seorang adventurer yang dip
 
 - **HTML5** — struktur
 - **CSS3** — styling dengan custom properties (CSS variables)
-- **Vanilla JavaScript (ES6+)** — semua logika game, **tanpa framework**
+- **Vanilla JavaScript (ES2022 + ES Modules)** — semua logika game, **tanpa framework, tanpa bundler**
+- **JSDoc + TypeScript checker** — type-checking di editor tanpa build step
 - **Google Fonts** — UnifrakturCook (display), Cormorant Garamond (body), JetBrains Mono (data)
 
-Tidak ada build step, tidak ada dependency, tidak ada bundler. Cukup buka `index.html` di browser.
+Tidak ada build step, tidak ada dependency runtime, tidak ada bundler — cukup HTTP server lokal untuk development, deploy langsung ke GitHub Pages.
 
 ---
 
@@ -54,54 +55,65 @@ Tidak ada build step, tidak ada dependency, tidak ada bundler. Cukup buka `index
 
 ```
 crypt-of-vaeldrun/
-├── index.html              # entry point, load semua script
+├── index.html              # entry point — load main.js sebagai ES module
 ├── style.css               # styling lengkap (dark fantasy theme)
+├── tsconfig.json           # config JSDoc type-check (optional, no build)
 ├── README.md               # file ini
 └── js/
-    ├── core.js             # game state, dice, UI rendering, status effects
-    ├── classes.js          # definisi 3 class & 9 abilities
-    ├── monsters.js         # database semua monster
-    ├── combat.js           # combat engine (turn-based)
-    ├── main.js             # scene router & game initialization
-    └── scenes/
-        ├── town.js         # Aethelford hub (inn, smith, elder, world map)
-        ├── crypt.js        # Crypt of Vael'drun dungeon
-        └── forge.js        # Forge of Korr-Dun dungeon
+    ├── main.js             # entry: scene registry & game initialization
+    ├── engine/             # foundation systems
+    │   ├── types.js        # JSDoc type definitions
+    │   ├── state.js        # global game state
+    │   ├── dice.js         # roll math + animasi d20
+    │   ├── status-effects.js  # DoT, buff/debuff helpers
+    │   ├── ui.js           # narrative & UI rendering
+    │   └── combat.js       # turn-based combat engine
+    ├── data/               # definisi statis
+    │   ├── classes.js      # 3 class playable
+    │   ├── abilities.js    # 9 ability per class
+    │   └── monsters.js     # database monster
+    └── scenes/             # konten cerita
+        ├── start.js        # character creation
+        ├── town.js         # Aethelford hub
+        ├── crypt.js        # Crypt of Vael'drun
+        └── forge.js        # Forge of Korr-Dun
 ```
 
-### Urutan Loading Script
-
-Karena tidak menggunakan module bundler, urutan `<script>` di `index.html` penting:
-
-```
-core.js → classes.js → monsters.js → combat.js → scenes/*.js → main.js
-```
-
-`main.js` dimuat terakhir karena bergantung pada semua file lain.
+Semua file di-load via `<script type="module">` — browser yang resolve dependency lewat `import`/`export`. Tidak perlu urutan loading manual.
 
 ---
 
 ## 🚀 Menjalankan Lokal
 
-### Opsi 1: Buka Langsung
-Cukup double-click `index.html`. Akan terbuka di browser default.
+> **⚠️ ES Modules butuh HTTP server.** Double-click `index.html` tidak akan jalan — browser memblokir `import` lewat protokol `file://`.
 
-### Opsi 2: Local Server (recommended untuk development)
-Beberapa browser membatasi fitur saat membuka file via `file://`. Untuk pengalaman terbaik:
+### Opsi 1: Python (paling cepat, tanpa install)
 
-**Python:**
 ```bash
-python -m http.server 8000
+python3 -m http.server 8000
 ```
 
-**Node.js (npx):**
+Buka `http://localhost:8000` di browser.
+
+### Opsi 2: Node.js (auto-reload)
+
 ```bash
+npx http-server -c-1 .
+# atau
 npx serve
 ```
 
-**VSCode:** install extension "Live Server", klik kanan `index.html` → "Open with Live Server"
+### Opsi 3: VSCode Live Server
 
-Lalu buka `http://localhost:8000` di browser.
+Install extension **"Live Server"**, klik kanan `index.html` → **"Open with Live Server"**.
+
+### (Opsional) Type-checking di editor
+
+Project sudah disetup dengan JSDoc + `tsconfig.json`. Buka di VSCode untuk dapat IntelliSense dan deteksi error tipe — tanpa build step. Untuk run check di terminal:
+
+```bash
+npx -p typescript tsc --noEmit
+```
 
 ---
 
@@ -163,21 +175,25 @@ Project ini adalah prototype eksperimental dan terbuka untuk kontribusi! Jika ka
 
 ### Cara Menambah Scene Baru
 
-1. Tambahkan scene di file relevan (`scenes/town.js`, `scenes/crypt.js`, dll)
-2. Format scene:
+1. Tambahkan scene di file relevan (`js/scenes/town.js`, `js/scenes/crypt.js`, dll) sebagai property pada object yang di-export:
    ```javascript
-   namaScene: () => {
-     showNarrative(`<p>Deskripsi...</p>`);
-     showChoices([
-       { text: 'Pilihan A', action: () => goToScene('sceneLain') }
-     ]);
-   }
+   // js/scenes/crypt.js
+   export const cryptScenes = {
+     // ... scene lain
+     namaScene: () => {
+       showNarrative(`<p>Deskripsi...</p>`);
+       showChoices([
+         { text: 'Pilihan A', action: () => goToScene('sceneLain') }
+       ]);
+     }
+   };
    ```
+2. Pastikan semua function yang dipakai sudah di-import di top of file
 3. Sambungkan via `goToScene('namaScene')` dari scene lain
 
 ### Cara Menambah Monster Baru
 
-Edit `js/monsters.js`:
+Edit `js/data/monsters.js`:
 ```javascript
 namaMonster: {
   name: 'Display Name',
@@ -189,7 +205,7 @@ Lalu panggil dari scene: `combat('namaMonster', () => onWinCallback())`
 
 ### Cara Menambah Ability Baru
 
-Edit `js/classes.js`, tambahkan di `ABILITIES`:
+Edit `js/data/abilities.js`, tambahkan di `ABILITIES`:
 ```javascript
 namaAbility: {
   name: 'Display Name',
@@ -203,7 +219,7 @@ namaAbility: {
   }
 }
 ```
-Lalu masukkan ID-nya ke array `abilities` di class yang relevan.
+Lalu masukkan ID-nya ke array `abilities` di class yang relevan (`js/data/classes.js`).
 
 ---
 

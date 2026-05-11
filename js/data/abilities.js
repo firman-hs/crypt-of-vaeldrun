@@ -1,56 +1,22 @@
+// @ts-check
 /* ============================================================
-   CLASSES.JS — Class & Ability Definitions
+   ABILITIES.JS — Ability Definitions
    ============================================================
-   Berisi:
-     - 3 class: Warrior, Mage, Rogue
-     - 9 abilities (3 per class)
+   Semua 9 ability untuk 3 class. Tiap ability adalah function
+   yang menerima (player, monster) dan return HTML log string.
+   Ability bisa modifikasi p.hp, m.hp, dan statusEffects keduanya.
+
+   Format ID: camelCase. Referensi dari classes.js via array string.
    ============================================================ */
 
+import { roll } from '../engine/dice.js';
+import { rollD20WithMod } from '../engine/dice.js';
 
-/* ============================================================
-   CLASSES
-   ============================================================ */
-const CLASSES = {
-  warrior: {
-    name: 'Warrior',
-    icon: '⚔',
-    desc: 'Petarung tangguh berlapis baja, tangan terlatih dalam baja dan darah.',
-    hp: 14,
-    stats: { STR: 3, DEX: 1, INT: 0, CON: 2 },
-    weapon: { name: 'Pedang Panjang', dmg: [1, 8], stat: 'STR' },
-    resource: { name: 'Stamina', max: 6, regen: 2 },
-    abilities: ['powerStrike', 'shieldBash', 'secondWind']
-  },
-  mage: {
-    name: 'Mage',
-    icon: '✦',
-    desc: 'Penyihir yang tahu rahasia, jubah bertaburkan debu menara purba.',
-    hp: 8,
-    stats: { STR: -1, DEX: 1, INT: 4, CON: 0 },
-    weapon: { name: 'Tongkat Arcane', dmg: [1, 6], stat: 'INT' },
-    resource: { name: 'Mana', max: 8, regen: 1 },
-    abilities: ['firebolt', 'frostNova', 'arcaneShield']
-  },
-  rogue: {
-    name: 'Rogue',
-    icon: '⚝',
-    desc: 'Bayangan yang berjalan, pisau di tangan dan kebohongan di lidah.',
-    hp: 10,
-    stats: { STR: 1, DEX: 4, INT: 2, CON: 1 },
-    weapon: { name: 'Belati Berbisa', dmg: [1, 6], stat: 'DEX' },
-    resource: { name: 'Focus', max: 6, regen: 2 },
-    abilities: ['sneakAttack', 'smokeBomb', 'poisonStrike']
-  }
-};
+/** @typedef {import('../engine/types.js').Ability} Ability */
+/** @typedef {Object<string, Ability>} AbilityRegistry */
 
-
-/* ============================================================
-   ABILITIES
-   ============================================================
-   Tiap ability mengembalikan log string. Ability bisa modifikasi
-   m.hp, m.statusEffects, p.hp, p.statusEffects.
-   ============================================================ */
-const ABILITIES = {
+/** @type {AbilityRegistry} */
+export const ABILITIES = {
   // ─── WARRIOR ──────────────────────────────────────────────
   powerStrike: {
     name: 'Power Strike',

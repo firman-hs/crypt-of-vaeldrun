@@ -1,11 +1,18 @@
+// @ts-check
 /* ============================================================
    MONSTERS.JS — Monster Database
    ============================================================
-   Semua monster terkumpul di sini. Format:
-     id: { name, intro, maxHp, ac, toHit, dmg: [base, dieSize], xp, gold, special? }
+   Semua monster terkumpul di sini sebagai template (tanpa
+   statusEffects/hp current). Pakai getMonster(id) untuk dapat
+   instance fresh dengan HP penuh.
    ============================================================ */
 
-const MONSTERS = {
+/** @typedef {import('../engine/types.js').Monster} Monster */
+/** @typedef {Omit<Monster, 'hp' | 'statusEffects'>} MonsterTemplate */
+/** @typedef {Object<string, MonsterTemplate>} MonsterRegistry */
+
+/** @type {MonsterRegistry} */
+export const MONSTERS = {
   // ─── CRYPT OF VAEL'DRUN ───────────────────────────────────
   goblin: {
     name: 'Goblin Penjaga',
@@ -57,13 +64,14 @@ const MONSTERS = {
 };
 
 
-/* ============================================================
-   MONSTER FACTORY
-   ============================================================
-   getMonster(id) mengembalikan instance baru dengan HP penuh
-   dan statusEffects kosong, siap dipakai di combat().
-   ============================================================ */
-function getMonster(id) {
+/**
+ * Factory: bikin instance Monster baru dengan HP penuh
+ * dan statusEffects kosong. Mencegah mutasi shared template.
+ *
+ * @param {string} id
+ * @returns {Monster | null}
+ */
+export function getMonster(id) {
   const base = MONSTERS[id];
   if (!base) {
     console.error(`Monster "${id}" tidak ditemukan!`);

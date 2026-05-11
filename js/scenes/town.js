@@ -1,14 +1,23 @@
+// @ts-check
 /* ============================================================
-   TOWN.JS — Aethelford (Hub)
+   SCENES/TOWN.JS — Aethelford (Hub)
    ============================================================
-   Town hub dengan:
+   Hub utama dengan:
      - Inn: heal full HP & resource (5 gold)
      - Smith: hint dan flavor
      - Elder: lore & quest
      - World Map: pilih dungeon
    ============================================================ */
 
-const townScenes = {
+import { state } from '../engine/state.js';
+import { showNarrative, showChoices, updateStatusPanel } from '../engine/ui.js';
+import { goToScene, init } from '../main.js';
+
+/** @typedef {import('../engine/types.js').Choice} Choice */
+
+
+/** @type {Object<string, () => void>} */
+export const townScenes = {
   // ─── ENTRY: Town Square ──────────────────────────────────
   town: () => {
     state.lastSafeScene = 'town';
@@ -26,6 +35,7 @@ const townScenes = {
       <p class="whisper">— Apa yang ingin kau lakukan? —</p>
     `);
 
+    /** @type {Choice[]} */
     const choices = [
       { text: '🛏️ Pergi ke Penginapan', hint: '— istirahat & heal (5 gold)', action: () => goToScene('townInn') },
       { text: '⚒️ Mengunjungi Pandai Besi', action: () => goToScene('townSmith') },
@@ -33,7 +43,6 @@ const townScenes = {
       { text: '🗺️ Buka Peta Wilayah', hint: '— pilih dungeon', action: () => goToScene('worldMap') }
     ];
 
-    // Final ending tersedia kalau kedua dungeon selesai
     if (state.flags.cryptCleared && state.flags.forgeCleared) {
       choices.push({
         text: '✦ Tinggalkan Aethelford selamanya',
@@ -47,28 +56,31 @@ const townScenes = {
 
   // ─── INN ─────────────────────────────────────────────────
   townInn: () => {
+    const p = state.player;
+    if (!p) return;
+
     showNarrative(`
       <p class="scene-title">Penginapan "Tongkat Bengkok"</p>
       <p>Sebuah ruangan rendah dengan langit-langit balok kayu, dipenuhi bau bir asam dan kayu basah. Pemilik penginapan, seorang pria gemuk berjenggot kemerahan, mengelap gelas tanpa mengangkat mata.</p>
       <p>"Lima keping emas untuk semalam," katanya. "Kasur tidak nyaman, makanan biasa saja, tapi pintunya berkunci."</p>
-      <p class="whisper">Kau punya ${state.player.gold} gold.</p>
+      <p class="whisper">Kau punya ${p.gold} gold.</p>
     `);
 
-    const canAfford = state.player.gold >= 5;
+    const canAfford = p.gold >= 5;
     showChoices([
       {
         text: 'Bayar 5 gold dan istirahat',
         hint: canAfford ? '— heal full HP & resource' : '— gold tidak cukup',
         disabled: !canAfford,
         action: () => {
-          state.player.gold -= 5;
-          state.player.hp = state.player.maxHp;
-          state.player.resource.current = state.player.resource.max;
-          state.player.statusEffects = {};
+          p.gold -= 5;
+          p.hp = p.maxHp;
+          p.resource.current = p.resource.max;
+          p.statusEffects = {};
           updateStatusPanel();
           showNarrative(`
             <p>Kau jatuh tidur sebelum kepalamu menyentuh bantal. Mimpi-mimpi yang aneh datang dan pergi.</p>
-            <p>Saat fajar, kau bangun dengan tubuh segar. <span class="success">HP dan ${state.player.resource.name} pulih sepenuhnya.</span></p>
+            <p>Saat fajar, kau bangun dengan tubuh segar. <span class="success">HP dan ${p.resource.name} pulih sepenuhnya.</span></p>
           `);
           showChoices([{ text: 'Kembali ke alun-alun', action: () => goToScene('town') }]);
         }
@@ -99,8 +111,9 @@ const townScenes = {
       {
         text: 'Tanya tentang senjatamu',
         action: () => {
+          const weapon = state.player?.weapon.name ?? 'senjatamu';
           showNarrative(`
-            <p>Borric melihat senjatamu sebentar. "${state.player.weapon.name}? Lumayan. Akan bertahan, kalau kau pintar."</p>
+            <p>Borric melihat senjatamu sebentar. "${weapon}? Lumayan. Akan bertahan, kalau kau pintar."</p>
             <p>Ia kembali ke palunya. Percakapan selesai.</p>
           `);
           showChoices([{ text: 'Pamit', action: () => goToScene('town') }]);
@@ -163,7 +176,10 @@ const townScenes = {
     const cryptCleared = state.flags.cryptCleared;
     const forgeCleared = state.flags.forgeCleared;
 
-    document.getElementById('choices').innerHTML = `
+    const container = document.getElementById('choices');
+    if (!container) return;
+
+    container.innerHTML = `
       <div class="location-grid">
         <div class="location-card crypt ${cryptCleared ? 'completed' : ''}" data-target="crypt">
           <div class="icon">🪦</div>
@@ -188,7 +204,7 @@ const townScenes = {
 
     document.querySelectorAll('.location-card').forEach(card => {
       card.addEventListener('click', () => {
-        const target = card.dataset.target;
+        const target = /** @type {HTMLElement} */ (card).dataset.target;
         if (target === 'crypt') goToScene('cryptEntrance');
         else if (target === 'forge') goToScene('forgeEntrance');
         else if (target === 'town-back') goToScene('town');
@@ -198,18 +214,18 @@ const townScenes = {
 
   // ─── FINAL ENDING ────────────────────────────────────────
   finalEnding: () => {
+    const p = state.player;
+    if (!p) return;
+
     showNarrative(`
       <p class="scene-title">✦ Akhir Petualangan ✦</p>
       <p>Selene berdiri di pintu desa saat fajar. Ia tidak tersenyum — bukan tipenya — tapi anggukannya berisi sesuatu yang lebih dari rasa terima kasih.</p>
       <p>"Crypt sunyi sekarang. Forge dingin. Aethelford bisa tidur untuk beberapa generasi, mungkin lebih."</p>
       <p>Kau berbalik, jalan terbentang ke arah cakrawala. Di balik bukit, kuda-kudamu menunggu. Di belakang, dua bencana yang kau akhiri.</p>
       <p class="whisper">— Apa pertanyaannya bukan "apa yang akan kau lakukan sekarang?" tapi "siapa yang akan memanggilmu berikutnya?" —</p>
-      <p class="loot">Stats akhir: Level ${state.player.level} ${state.player.className} · ${state.player.gold} gold</p>
+      <p class="loot">Stats akhir: Level ${p.level} ${p.className} · ${p.gold} gold</p>
       <p class="success">✦ TAMAT ✦</p>
     `);
     showChoices([{ text: '↻ Mulai petualangan baru', action: () => init() }]);
   }
 };
-
-// Daftarkan ke scenes global (akan diisi di main.js)
-Object.assign(window.__sceneRegistry = window.__sceneRegistry || {}, townScenes);
