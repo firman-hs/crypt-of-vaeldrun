@@ -7,7 +7,7 @@
    ============================================================ */
 
 import { state } from '../engine/state.js';
-import { rollD20WithMod } from '../engine/dice.js';
+import { check } from '../engine/dice.js';
 import { showNarrative, showChoices, updateStatusPanel, gainXP } from '../engine/ui.js';
 import { combat } from '../engine/combat.js';
 import { goToScene, init } from '../main.js';
@@ -50,7 +50,7 @@ export const cryptScenes = {
     `);
     showChoices([
       { text: 'Serang langsung', action: () => combat('goblin', () => { state.flags.goblinDefeated = true; goToScene('cryptEntrance'); }) },
-      { text: 'Coba menyelinap mengitari', hint: '— DEX check DC 13', action: sneakGoblin },
+      { text: 'Coba menyelinap mengitari', hint: '— DEX check DC 10', action: sneakGoblin },
       { text: 'Berbicara dengan si goblin', hint: '— hasilnya tidak pasti', action: parleyGoblin },
       { text: 'Mundur', action: () => goToScene('cryptEntrance') }
     ]);
@@ -73,7 +73,7 @@ export const cryptScenes = {
       <p>Suara — bukan dengan telinga, tapi di dalam tengkorakmu — bertanya: <em>"Kau yang hidup. Apakah kau datang sebagai murid, atau sebagai pencuri?"</em></p>
     `);
     showChoices([
-      { text: '"Aku datang sebagai murid"', hint: '— INT check DC 14', action: muridPath },
+      { text: '"Aku datang sebagai murid"', hint: '— INT check DC 13', action: muridPath },
       { text: 'Ambil bukunya', hint: '— berisiko', action: stealBook },
       { text: 'Mundur dengan hormat', action: () => goToScene('cryptEntrance') }
     ]);
@@ -87,8 +87,8 @@ export const cryptScenes = {
       <p>Air setinggi lutut menggenangi koridor. Sesuatu bergerak di bawah permukaan. Di ujung lain, kau lihat sebuah pintu berukir tengkorak — itu pasti gerbang ke ruang dalam crypt.</p>
     `);
     showChoices([
-      { text: 'Mengarungi air dengan hati-hati', hint: '— DEX check DC 12', action: wadeWater },
-      { text: 'Pancing dengan suara dulu', hint: '— INT check DC 11', action: baitWater },
+      { text: 'Mengarungi air dengan hati-hati', hint: '— DEX check DC 10', action: wadeWater },
+      { text: 'Pancing dengan suara dulu', hint: '— INT check DC 13', action: baitWater },
       { text: 'Mundur ke pertigaan', action: () => goToScene('cryptEntrance') }
     ]);
   },
@@ -103,8 +103,8 @@ export const cryptScenes = {
     `);
     showChoices([
       { text: '"Mahkotamu. Aku akan mengakhiri ini."', action: () => combat('lich', () => cryptComplete('penakluk')) },
-      { text: '"Aku ingin tahu kebenaran."', hint: '— INT check DC 15', action: peacefulPath },
-      { text: 'Diam-diam, dekati mahkotanya', hint: '— DEX check DC 16', action: sneakCrown }
+      { text: '"Aku ingin tahu kebenaran."', hint: '— INT check DC 17', action: peacefulPath },
+      { text: 'Diam-diam, dekati mahkotanya', hint: '— DEX check DC 19', action: sneakCrown }
     ]);
   }
 };
@@ -116,13 +116,13 @@ export const cryptScenes = {
 function sneakGoblin() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.DEX, 13, 'Sneak Goblin');
+  const r = check(p.stats.DEX, 10, 'Sneak Goblin', 'Kau bergerak pelan di antara bayangan');
   if (r.success) {
     state.flags.goblinDefeated = true;
     p.gold += 8;
     updateStatusPanel();
     showNarrative(`
-      <p class="success">Kau bergerak seperti hantu. Goblin itu tidak pernah tahu kau di belakangnya. <span class="roll">DEX ${r.total} vs DC 13</span></p>
+      <p class="success">Kau bergerak seperti hantu. Goblin itu tidak pernah tahu kau di belakangnya. <span class="roll">DEX ${r.total} vs DC 10</span></p>
       <p class="loot">Kau mengambil 8 gold dari peti, lalu mundur tanpa suara.</p>
     `);
     showChoices([{ text: 'Kembali ke pertigaan', action: () => goToScene('cryptEntrance') }]);
@@ -135,7 +135,7 @@ function sneakGoblin() {
 function parleyGoblin() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.INT, 14, 'Diplomasi Goblin');
+  const r = check(p.stats.INT, 13, 'Diplomasi Goblin', 'Kau memilih kata-kata dengan hati-hati');
   if (r.success) {
     state.flags.goblinDefeated = true;
     p.gold += 5;
@@ -154,7 +154,7 @@ function parleyGoblin() {
 function muridPath() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.INT, 14, 'Persuasi Arcane');
+  const r = check(p.stats.INT, 13, 'Persuasi Arcane', 'Kau menjawab dengan tulus');
   if (r.success) {
     p.stats.INT += 1;
     updateStatusPanel();
@@ -191,7 +191,7 @@ function stealBook() {
 function wadeWater() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.DEX, 12, 'Mengarungi air');
+  const r = check(p.stats.DEX, 10, 'Mengarungi air', 'Kau melangkah pelan ke dalam air');
   if (r.success) {
     showNarrative(`<p>Kau menyeberang tanpa mengganggu apapun di bawah air.</p>`);
     showChoices([{ text: 'Buka pintu tengkorak', action: () => goToScene('cryptBoss') }]);
@@ -204,7 +204,7 @@ function wadeWater() {
 function baitWater() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.INT, 11, 'Strategi');
+  const r = check(p.stats.INT, 13, 'Strategi', 'Kau memperhitungkan sudut lemparan');
   if (r.success) {
     showNarrative(`<p>Kau melemparkan kerikil. Sesuatu menyerang permukaan air dengan ganas.</p>`);
     showChoices([{ text: 'Lawan dari posisi aman', action: () => combat('slimeDetected', () => goToScene('cryptBoss')) }]);
@@ -220,7 +220,7 @@ function baitWater() {
 function peacefulPath() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.INT, 15, 'Diplomasi Lich');
+  const r = check(p.stats.INT, 17, 'Diplomasi Lich', 'Kau bicara perlahan tentang kehilangan');
   if (r.success) {
     gainXP(500);
     updateStatusPanel();
@@ -240,7 +240,7 @@ function peacefulPath() {
 function sneakCrown() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.DEX, 16, 'Heist Mahkota');
+  const r = check(p.stats.DEX, 19, 'Heist Mahkota', 'Kau menggeser kaki tanpa suara');
   if (r.success) {
     gainXP(400);
     p.gold += 30;

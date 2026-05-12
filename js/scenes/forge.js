@@ -7,7 +7,7 @@
    ============================================================ */
 
 import { state } from '../engine/state.js';
-import { rollD20WithMod } from '../engine/dice.js';
+import { check } from '../engine/dice.js';
 import { showNarrative, showChoices, updateStatusPanel, gainXP } from '../engine/ui.js';
 import { combat } from '../engine/combat.js';
 import { MONSTERS } from '../data/monsters.js';
@@ -34,8 +34,8 @@ export const forgeScenes = {
       <p>Di antara reruntuhan, kau lihat dua jalan masuk: <em>celah sempit</em> di sisi pintu, atau lubang di langit-langit yang bisa dipanjat dari samping.</p>
     `);
     showChoices([
-      { text: 'Susupi celah sempit', hint: '— DEX check DC 12', action: squeezeIn },
-      { text: 'Panjat melalui langit-langit', hint: '— STR check DC 12', action: climbIn },
+      { text: 'Susupi celah sempit', hint: '— DEX check DC 10', action: squeezeIn },
+      { text: 'Panjat melalui langit-langit', hint: '— STR check DC 10', action: climbIn },
       { text: 'Mundur kembali ke Aethelford', action: () => goToScene('town') }
     ]);
   },
@@ -65,7 +65,7 @@ export const forgeScenes = {
           showChoices([{ text: 'Lanjut lebih dalam', action: () => goToScene('forgeBridge') }]);
         })
       },
-      { text: 'Coba menyelinap melewatinya', hint: '— DEX check DC 14', action: sneakPastGhoul },
+      { text: 'Coba menyelinap melewatinya', hint: '— DEX check DC 13', action: sneakPastGhoul },
       { text: 'Mundur ke pintu masuk', action: () => goToScene('forgeEntrance') }
     ]);
   },
@@ -90,7 +90,7 @@ export const forgeScenes = {
     if (p.class === 'mage' || p.stats.INT >= 3) {
       choices.push({
         text: 'Bentuk jembatan sihir untuk menyeberang',
-        hint: '— INT check DC 12 (khusus pintar)',
+        hint: '— INT check DC 13 (khusus pintar)',
         action: arcaneBridge
       });
     }
@@ -137,8 +137,8 @@ export const forgeScenes = {
     `);
     showChoices([
       { text: '"Aku datang untuk mengakhirimu."', action: () => combat('magmaforge', () => forgeComplete('hancur')) },
-      { text: 'Coba bicara — "Apa kau tahu kau tidak hidup?"', hint: '— INT check DC 16', action: parleyMagmaforge },
-      { text: 'Cari titik lemah di tubuhnya dulu', hint: '— DEX check DC 13', action: scoutMagmaforge }
+      { text: 'Coba bicara — "Apa kau tahu kau tidak hidup?"', hint: '— INT check DC 18', action: parleyMagmaforge },
+      { text: 'Cari titik lemah di tubuhnya dulu', hint: '— DEX check DC 15', action: scoutMagmaforge }
     ]);
   }
 };
@@ -149,7 +149,7 @@ export const forgeScenes = {
 function squeezeIn() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.DEX, 12, 'Susupi celah');
+  const r = check(p.stats.DEX, 10, 'Susupi celah', 'Kau memeras tubuhmu ke celah sempit');
   if (r.success) {
     showNarrative(`<p>Kau memeras tubuhmu lewat celah sempit. Beberapa goresan, tapi kau masuk.</p>`);
     showChoices([{ text: 'Lanjut ke aula', action: () => goToScene('forgeHall') }]);
@@ -168,7 +168,7 @@ function squeezeIn() {
 function climbIn() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.STR, 12, 'Panjat lubang');
+  const r = check(p.stats.STR, 10, 'Panjat lubang', 'Kau mencengkeram batu dan mulai memanjat');
   if (r.success) {
     showNarrative(`<p>Kau memanjat dengan mantap dan menjatuhkan diri ke aula di dalam.</p>`);
     showChoices([{ text: 'Lanjut ke aula', action: () => goToScene('forgeHall') }]);
@@ -187,7 +187,7 @@ function climbIn() {
 function sneakPastGhoul() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.DEX, 14, 'Sneak Ghoul');
+  const r = check(p.stats.DEX, 13, 'Sneak Ghoul', 'Kau bergerak hati-hati melalui meja-meja kerangka');
   if (r.success) {
     showNarrative(`<p class="success">Kau bergerak tanpa suara melewati meja-meja. Ghoul itu tidak pernah menoleh.</p>`);
     showChoices([{ text: 'Lanjut ke jembatan lava', action: () => goToScene('forgeBridge') }]);
@@ -200,7 +200,7 @@ function sneakPastGhoul() {
 function jumpBridge() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.DEX, 14, 'Lompati jembatan');
+  const r = check(p.stats.DEX, 14, 'Lompati jembatan', 'Kau mengukur jarak dan mengambil ancang-ancang');
   if (r.success) {
     showNarrative(`<p class="success">Kau melompat dengan presisi sempurna, mendarat di sisi seberang.</p>`);
     showChoices([{ text: 'Lanjut ke bengkel', action: () => goToScene('forgeImpRoom') }]);
@@ -219,7 +219,7 @@ function jumpBridge() {
 function climbAroundBridge() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.STR, 13, 'Panjat tebing');
+  const r = check(p.stats.STR, 13, 'Panjat tebing', 'Kau menempel di sisi tebing dan mulai merayap');
   if (r.success) {
     showNarrative(`<p class="success">Kau merayap di sisi tebing, tangan demi tangan, sampai tiba di seberang.</p>`);
     showChoices([{ text: 'Lanjut ke bengkel', action: () => goToScene('forgeImpRoom') }]);
@@ -238,7 +238,7 @@ function climbAroundBridge() {
 function arcaneBridge() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.INT, 12, 'Sihir Jembatan');
+  const r = check(p.stats.INT, 13, 'Sihir Jembatan', 'Kau merentangkan tangan, mengumpulkan mana');
   if (r.success) {
     showNarrative(`
       <p class="success">Kau merentangkan tangan dan udara mengkristal menjadi platform tipis. Cukup untuk menyeberang.</p>
@@ -260,7 +260,7 @@ function arcaneBridge() {
 function smokeImps() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.DEX, 13, 'Asap');
+  const r = check(p.stats.DEX, 13, 'Asap', 'Kau mengeluarkan kantung asap dari saku');
   if (r.success) {
     showNarrative(`
       <p class="success">Asap dari kantungmu membutakan ruangan. Imp-imp itu panik, saling menyerang dalam kebingungan.</p>
@@ -290,7 +290,7 @@ function smokeImps() {
 function parleyMagmaforge() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.INT, 16, 'Diplomasi Magmaforge');
+  const r = check(p.stats.INT, 18, 'Diplomasi Magmaforge', 'Kau bertanya pelan, tanpa amarah');
   if (r.success) {
     gainXP(600);
     p.gold += 50;
@@ -312,7 +312,7 @@ function parleyMagmaforge() {
 function scoutMagmaforge() {
   const p = state.player;
   if (!p) return;
-  const r = rollD20WithMod(p.stats.DEX, 13, 'Scouting');
+  const r = check(p.stats.DEX, 15, 'Scouting', 'Kau menyelinap mengitari Magmaforge');
   if (r.success) {
     showNarrative(`
       <p class="success">Kau perhatikan: di leher Magmaforge ada celah kecil di mana lava masuk-keluar. Itu jantungnya.</p>

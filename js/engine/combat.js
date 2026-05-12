@@ -20,7 +20,7 @@
    ============================================================ */
 
 import { state } from './state.js';
-import { roll, rollD20WithMod, whenDiceIdle } from './dice.js';
+import { roll, check, whenDiceIdle } from './dice.js';
 import {
   showNarrative, appendNarrative, showChoices, clearChoices,
   updateStatusPanel, gainXP
@@ -163,7 +163,7 @@ export function combat(monsterIdOrObj, onWin) {
    */
   function tryFlee(p) {
     const dc = 14;
-    const r = rollD20WithMod(p.stats.DEX, dc, 'Flee');
+    const r = check(p.stats.DEX, dc, 'Flee', 'Kau mencari jalan keluar');
 
     if (r.auto && r.success) {
       appendNarrative(`<p class="success">Kau melarikan diri tanpa kesulitan.</p>`);
@@ -267,11 +267,12 @@ function playerAttack(p, m) {
   const hasAdvantage = !!p.pendingAdvantage;
   if (hasAdvantage) p.pendingAdvantage = false; // consume
 
-  const r = rollD20WithMod(mod, dc, `Attack vs ${m.name}`, { advantage: hasAdvantage });
+  const prefix = `Kau mengayun ${p.weapon.name} ke arah ${m.name}`;
+  const r = check(mod, dc, `Attack vs ${m.name}`, prefix, { advantage: hasAdvantage });
 
   const advTag = hasAdvantage ? ' <span class="buff">[advantage]</span>' : '';
 
-  // Handle auto-resolve
+  // Handle auto-resolve (threshold tidak ditampilkan oleh helper)
   if (r.auto && r.success) {
     let dmg = roll(p.weapon.dmg[1]) + p.weapon.dmg[0] - 1 + Math.max(0, mod);
     m.hp -= dmg;
@@ -308,9 +309,10 @@ function monsterAttack(p, m) {
   if (m.statusEffects.blinded && m.statusEffects.blinded > 0) toHit -= 4;
 
   const dc = 10 + p.stats.DEX;
-  const mr = rollD20WithMod(toHit, dc, `${m.name} attack`);
+  const prefix = `${m.name} mengayun ke arahmu`;
+  const mr = check(toHit, dc, `${m.name} attack`, prefix);
 
-  // Handle auto-resolve
+  // Handle auto-resolve (threshold tidak ditampilkan oleh check())
   if (mr.auto && !mr.success) {
     return `<p>${m.name} mengayun, tapi tidak ada kesempatan menembus pertahananmu.</p>`;
   }
