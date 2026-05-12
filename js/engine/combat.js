@@ -20,7 +20,7 @@
    ============================================================ */
 
 import { state } from './state.js';
-import { roll, rollD20WithMod, requestRollWithReroll, whenDiceIdle } from './dice.js';
+import { roll, rollD20WithMod, whenDiceIdle } from './dice.js';
 import {
   showNarrative, appendNarrative, showChoices, clearChoices,
   updateStatusPanel, gainXP
@@ -84,12 +84,11 @@ export function combat(monsterIdOrObj, onWin) {
 
   /**
    * Eksekusi satu turn combat dengan aksi pemain.
-   * Player phase: async (untuk dadu tension), monster phase: sync setelahnya.
    *
    * @param {'attack' | 'ability' | 'flee'} action
    * @param {string} [abilityId]
    */
-  async function combatTurn(action, abilityId) {
+  function combatTurn(action, abilityId) {
     clearChoices();
 
     // ─── PLAYER PHASE ───────────────────────────────────────
@@ -107,17 +106,14 @@ export function combat(monsterIdOrObj, onWin) {
     }
 
     if (action === 'attack') {
-      const attackLog = await playerAttack(p, m);
-      appendNarrative(attackLog);
+      appendNarrative(playerAttack(p, m));
     } else if (action === 'ability' && abilityId) {
       const ab = ABILITIES[abilityId];
       p.resource.current -= ab.cost;
       if (ab.once) usedOnceAbilities.add(abilityId);
-      const abilityLog = ab.use(p, m);
-      appendNarrative(abilityLog);
+      appendNarrative(ab.use(p, m));
     } else if (action === 'flee') {
-      const fleeOk = await tryFlee(p);
-      if (fleeOk) return;
+      if (tryFlee(p)) return;
     }
 
     updateStatusPanel();
@@ -160,27 +156,24 @@ export function combat(monsterIdOrObj, onWin) {
   }
 
   /**
-   * Coba flee dengan DEX check (dengan dadu tension + reroll).
+   * Coba flee dengan DEX check (DC 14).
    * Return true jika flee sukses (caller hentikan combat).
-   * @param {import('./types.js').Player} p
-   * @returns {Promise<boolean>}
+   * @param {Player} p
+   * @returns {boolean}
    */
-  async function tryFlee(p) {
+  function tryFlee(p) {
     const dc = 14;
-    appendNarrative(`<p class="whisper">Mencoba melarikan diri... <em>butuh ≥${dc - p.stats.DEX}</em></p>`);
+    const r = rollD20WithMod(p.stats.DEX, dc, 'Flee');
 
-    const r = await requestRollWithReroll(p.stats.DEX, dc, 'Flee', {
-      canReroll: p.fateTokens > 0,
-      onRerollAttempt: () => {
-        if (p.fateTokens > 0) {
-          p.fateTokens--;
-          updateStatusPanel();
-          return true;
-        }
-        return false;
-      }
-    });
-
+    if (r.auto && r.success) {
+      appendNarrative(`<p class="success">Kau melarikan diri tanpa kesulitan.</p>`);
+      showChoices([{ text: 'Lanjutkan', action: () => fleeBackToSafe() }]);
+      return true;
+    }
+    if (r.auto && !r.success) {
+      appendNarrative(`<p class="failure">Tidak ada jalan kabur dari sini.</p>`);
+      return false;
+    }
     if (r.success) {
       appendNarrative(`<p>Kau berhasil melarikan diri ke kegelapan. <span class="roll">d20(${r.d})+${p.stats.DEX} = ${r.total} vs DC ${dc}</span></p>`);
       showChoices([{ text: 'Lanjutkan', action: () => fleeBackToSafe() }]);
@@ -199,6 +192,7 @@ export function combat(monsterIdOrObj, onWin) {
     p.gold += m.gold || 0;
     p.resource.current = Math.min(p.resource.max, p.resource.current + Math.ceil(p.resource.max / 2));
     p.statusEffects = {};
+    p.pendingAdvantage = false;
     updateStatusPanel();
     appendNarrative(log);
     showChoices([{ text: 'Lanjutkan perjalanan', action: onWin }]);
@@ -259,43 +253,45 @@ export function combat(monsterIdOrObj, onWin) {
 
 /**
  * Serangan dasar player dengan senjata.
- * Async: tampilkan threshold dulu, lalu dadu (dengan kesempatan reroll),
- * lalu hitung damage dan return narrative log.
+ * Cek pendingAdvantage dari Smoke Bomb dan consume kalau ada.
  *
  * @param {Player} p
  * @param {Monster} m
- * @returns {Promise<string>}
+ * @returns {string}
  */
-async function playerAttack(p, m) {
-  let mod = p.stats[p.weapon.stat];
-  if (p.statusEffects.advantage && p.statusEffects.advantage > 0) mod += 5;
-
+function playerAttack(p, m) {
+  const mod = p.stats[p.weapon.stat];
   const dc = m.ac;
-  const threshold = dc - mod;
 
-  // Tampilkan konteks sebelum dadu
-  appendNarrative(`<p class="whisper">Kau mengayun ${p.weapon.name} ke arah ${m.name}... <em>butuh ≥${threshold}</em></p>`);
+  // Cek apakah ada pending advantage dari ability seperti Smoke Bomb
+  const hasAdvantage = !!p.pendingAdvantage;
+  if (hasAdvantage) p.pendingAdvantage = false; // consume
 
-  const r = await requestRollWithReroll(mod, dc, `Attack vs ${m.name}`, {
-    canReroll: p.fateTokens > 0,
-    onRerollAttempt: () => {
-      if (p.fateTokens > 0) {
-        p.fateTokens--;
-        updateStatusPanel();
-        return true;
-      }
-      return false;
-    }
-  });
+  const r = rollD20WithMod(mod, dc, `Attack vs ${m.name}`, { advantage: hasAdvantage });
 
+  const advTag = hasAdvantage ? ' <span class="buff">[advantage]</span>' : '';
+
+  // Handle auto-resolve
+  if (r.auto && r.success) {
+    let dmg = roll(p.weapon.dmg[1]) + p.weapon.dmg[0] - 1 + Math.max(0, mod);
+    m.hp -= dmg;
+    return `<p>Kau mengayun ${p.weapon.name} ke arah ${m.name}.${advTag}</p>
+            <p class="success">Serangan tak terhindarkan. ${dmg} damage.</p>`;
+  }
+  if (r.auto && !r.success) {
+    return `<p>Pertahanan ${m.name} terlalu kuat untuk seranganmu.${advTag}</p>
+            <p class="failure">Tidak mengenai.</p>`;
+  }
+
+  // Normal roll
   if (r.success) {
-    let dmg = roll(p.weapon.dmg[1]) + p.weapon.dmg[0] - 1 + Math.max(0, p.stats[p.weapon.stat]);
+    let dmg = roll(p.weapon.dmg[1]) + p.weapon.dmg[0] - 1 + Math.max(0, mod);
     if (r.isCrit) dmg *= 2;
     m.hp -= dmg;
-    return `<p>Mata pedangmu menemukan celah. <span class="roll">d20(${r.d})+${mod} = ${r.total} vs AC ${m.ac}</span></p>
+    return `<p>Mata pedangmu menemukan celah.${advTag} <span class="roll">d20(${r.d})+${mod} = ${r.total} vs AC ${m.ac}</span></p>
             <p class="success">${r.isCrit ? '✦ CRITICAL HIT! ' : ''}Kena! ${dmg} damage.</p>`;
   }
-  return `<p>Ayunanmu memecah udara saja. <span class="roll">d20(${r.d})+${mod} = ${r.total} vs AC ${m.ac}</span></p>
+  return `<p>Ayunanmu memecah udara saja.${advTag} <span class="roll">d20(${r.d})+${mod} = ${r.total} vs AC ${m.ac}</span></p>
           <p class="failure">${r.isFumble ? '✦ FUMBLE! ' : ''}Meleset.</p>`;
 }
 
@@ -313,6 +309,28 @@ function monsterAttack(p, m) {
 
   const dc = 10 + p.stats.DEX;
   const mr = rollD20WithMod(toHit, dc, `${m.name} attack`);
+
+  // Handle auto-resolve
+  if (mr.auto && !mr.success) {
+    return `<p>${m.name} mengayun, tapi tidak ada kesempatan menembus pertahananmu.</p>`;
+  }
+  if (mr.auto && mr.success) {
+    let dmg = roll(m.dmg[1]) + m.dmg[0] - 1;
+    if (p.statusEffects.shielded && p.statusEffects.shielded > 0) {
+      const reduction = roll(8);
+      const original = dmg;
+      dmg = Math.max(0, dmg - reduction);
+      p.hp -= dmg;
+      return `<p>${m.name} menyerang — kau tidak punya cara menghindar.</p>
+              <p class="buff">Arcane Shield menyerap ${reduction} dari ${original} damage.</p>
+              <p class="${dmg > 0 ? 'failure' : 'success'}">Kau menerima ${dmg} damage.</p>`;
+    }
+    p.hp -= dmg;
+    return `<p>${m.name} menyerang — kau tidak punya cara menghindar.</p>
+            <p class="failure">Kau menerima ${dmg} damage.</p>`;
+  }
+
+  // Normal roll
   if (mr.success) {
     let dmg = roll(m.dmg[1]) + m.dmg[0] - 1;
     if (mr.isCrit) dmg *= 2;

@@ -412,7 +412,7 @@ body.class-rogue .resource-fill {
 .class-card.class-rogue .resource-tag { color: var(--focus); }
 
 /* ============================================================
-   WORLD MAP / LOCATION CARDS (BARU)
+   WORLD MAP / LOCATION CARDS
    ============================================================ */
 .location-grid {
   display: grid;
@@ -546,7 +546,7 @@ body.class-rogue .resource-fill {
 }
 
 /* ============================================================
-   DICE ANIMATION (BARU)
+   DICE ANIMATION
    ============================================================ */
 .dice-container {
   position: fixed;
@@ -657,79 +657,6 @@ body.class-rogue .resource-fill {
 }
 
 /* ============================================================
-   REROLL BUTTON (BARU — Phase 2)
-   ============================================================ */
-.dice-reroll-container {
-  position: fixed;
-  top: calc(50% + 70px);
-  right: 30px;
-  z-index: 101;
-  opacity: 0;
-  transform: translateY(8px);
-  pointer-events: none;
-  transition: opacity 0.3s ease 0.2s, transform 0.3s ease 0.2s;
-}
-
-.dice-reroll-container.visible {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-.dice-reroll-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: linear-gradient(180deg, rgba(45, 30, 20, 0.95), rgba(20, 14, 10, 0.98));
-  border: 1px solid var(--gold);
-  color: var(--gold);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  letter-spacing: 1px;
-  padding: 8px 14px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-transform: uppercase;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.6), 0 0 16px rgba(201, 169, 97, 0.2);
-  animation: rerollPulse 2s ease-in-out infinite;
-}
-
-.dice-reroll-btn:hover {
-  background: linear-gradient(180deg, rgba(60, 40, 25, 1), rgba(30, 20, 14, 1));
-  box-shadow: 0 4px 24px rgba(0,0,0,0.7), 0 0 24px rgba(201, 169, 97, 0.4);
-  transform: scale(1.05);
-}
-
-.dice-reroll-btn .reroll-icon {
-  font-size: 16px;
-  display: inline-block;
-  transition: transform 0.3s ease;
-}
-
-.dice-reroll-btn:hover .reroll-icon {
-  transform: rotate(180deg);
-}
-
-.dice-reroll-btn .reroll-cost {
-  background: rgba(0,0,0,0.5);
-  padding: 2px 6px;
-  border-left: 1px solid var(--gold-dim);
-  margin-left: 4px;
-  color: var(--gold-soft);
-  font-size: 10px;
-}
-
-@keyframes rerollPulse {
-  0%, 100% { box-shadow: 0 4px 16px rgba(0,0,0,0.6), 0 0 16px rgba(201, 169, 97, 0.2); }
-  50%      { box-shadow: 0 4px 16px rgba(0,0,0,0.6), 0 0 24px rgba(201, 169, 97, 0.45); }
-}
-
-/* Highlight Fate Token saat low */
-.stat-row .value.fate-low {
-  color: var(--blood-bright);
-}
-
-/* ============================================================
    MOBILE
    ============================================================ */
 @media (max-width: 600px) {
@@ -738,7 +665,7 @@ body.class-rogue .resource-fill {
   .status-panel { grid-template-columns: 1fr; gap: 12px; }
   .narrative-content { font-size: 16px; }
   .choice-btn .desc { margin-left: 0; }
-  
+
   /* Dadu lebih kecil di mobile, posisi di pojok kanan atas */
   .dice-container {
     width: 80px;
@@ -754,15 +681,5 @@ body.class-rogue .resource-fill {
     0%   { transform: scale(1.3); }
     60%  { transform: scale(0.9); }
     100% { transform: scale(1); }
-  }
-
-  /* Reroll button di mobile: di bawah dadu */
-  .dice-reroll-container {
-    top: 170px;
-    right: 12px;
-  }
-  .dice-reroll-btn {
-    font-size: 10px;
-    padding: 6px 10px;
   }
 }

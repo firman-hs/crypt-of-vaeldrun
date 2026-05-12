@@ -63,9 +63,7 @@ export function start() {
           regen: c.resource.regen
         },
         abilities: [...c.abilities],
-        statusEffects: {},
-        fateTokens: 3,
-        maxFateTokens: 3
+        statusEffects: {}
       };
       state.player = player;
       updateStatusPanel();
@@ -88,8 +86,7 @@ function showAbilityIntro() {
     <p class="scene-title">Kemampuanmu</p>
     <p>Sebagai seorang <em>${p.className}</em>, kau menguasai tiga teknik. Kau memiliki <span class="ability">${p.resource.max} ${p.resource.name}</span>, beregenerasi <em>+${p.resource.regen}/turn</em> dalam pertempuran.</p>
     ${abilityList}
-    <p>Selain itu, kau memiliki <span class="ability">${p.maxFateTokens} Fate Tokens</span> — takdir yang bisa kau paksa untuk berputar ulang. Saat dadu jatuh dalam pertempuran, kau punya kesempatan singkat untuk <em>reroll</em> dengan biaya 1 Fate Token. Fate Tokens pulih saat beristirahat di penginapan.</p>
-    <p class="whisper">— Pakailah dengan bijak, sebab pertempuran tidak menunggu yang lambat. —</p>
+    <p class="whisper">— Dadu akan menentukan jalan. Pilihlah aksi dengan bijak. —</p>
   `);
   showChoices([{ text: 'Masuki Aethelford', action: () => goToScene('town') }]);
 }

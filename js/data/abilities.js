@@ -9,8 +9,7 @@
    Format ID: camelCase. Referensi dari classes.js via array string.
    ============================================================ */
 
-import { roll } from '../engine/dice.js';
-import { rollD20WithMod } from '../engine/dice.js';
+import { roll, rollD20WithMod } from '../engine/dice.js';
 
 /** @typedef {import('../engine/types.js').Ability} Ability */
 /** @typedef {Object<string, Ability>} AbilityRegistry */
@@ -28,10 +27,12 @@ export const ABILITIES = {
         const base = roll(p.weapon.dmg[1]) + p.weapon.dmg[0] - 1 + p.stats.STR;
         const dmg = base * 2;
         m.hp -= dmg;
-        return `<p>Kau menghimpun seluruh kekuatan dan menebas dengan brutal! <span class="roll">STR check ${r.total} vs DC 12</span></p>
+        const rollInfo = r.auto ? '' : ` <span class="roll">STR check ${r.total} vs DC 12</span>`;
+        return `<p>Kau menghimpun seluruh kekuatan dan menebas dengan brutal!${rollInfo}</p>
                 <p class="success"><span class="ability">POWER STRIKE!</span> ${dmg} damage.</p>`;
       }
-      return `<p class="failure">Ayunanmu liar dan meleset. <span class="roll">STR check ${r.total} vs DC 12</span></p>`;
+      const rollInfo = r.auto ? '' : ` <span class="roll">STR check ${r.total} vs DC 12</span>`;
+      return `<p class="failure">Ayunanmu liar dan meleset.${rollInfo}</p>`;
     }
   },
   shieldBash: {
@@ -42,7 +43,8 @@ export const ABILITIES = {
       const r = rollD20WithMod(p.stats.STR, 12, 'Shield Bash');
       const dmg = roll(4) + Math.max(0, p.stats.STR);
       m.hp -= dmg;
-      let log = `<p>Kau menghantam dengan perisai. <span class="roll">STR check ${r.total} vs DC 12</span></p>`;
+      const rollInfo = r.auto ? '' : ` <span class="roll">STR check ${r.total} vs DC 12</span>`;
+      let log = `<p>Kau menghantam dengan perisai.${rollInfo}</p>`;
       log += `<p class="success">Hit! ${dmg} damage.</p>`;
       if (r.success) {
         m.statusEffects.stunned = 1;
@@ -107,24 +109,25 @@ export const ABILITIES = {
     desc: 'Serangan tipu daya — +1d6 damage jika DEX check sukses (DC 13).',
     use: (p, m) => {
       const r = rollD20WithMod(p.stats.DEX, 13, 'Sneak Attack');
+      const rollInfo = r.auto ? '' : ` <span class="roll">DEX check ${r.total} vs DC 13</span>`;
       if (r.success) {
         const dmg = roll(p.weapon.dmg[1]) + p.weapon.dmg[0] - 1 + p.stats.DEX + roll(6);
         m.hp -= dmg;
-        return `<p>Kau menghilang ke bayangan, lalu menusuk dari belakang. <span class="roll">DEX check ${r.total} vs DC 13</span></p>
+        return `<p>Kau menghilang ke bayangan, lalu menusuk dari belakang.${rollInfo}</p>
                 <p class="success"><span class="ability">SNEAK ATTACK!</span> ${dmg} damage.</p>`;
       }
-      return `<p class="failure">${m.name} mendeteksimu sebelum kau bergerak. <span class="roll">DEX check ${r.total} vs DC 13</span></p>`;
+      return `<p class="failure">${m.name} mendeteksimu sebelum kau bergerak.${rollInfo}</p>`;
     }
   },
   smokeBomb: {
     name: 'Smoke Bomb',
     cost: 4,
-    desc: 'Lempar bom asap. Serangan biasa berikutnya advantage (+5 to-hit).',
+    desc: 'Lempar bom asap. Serangan biasa berikutnya: advantage (2d20 take highest).',
     use: (p, m) => {
-      p.statusEffects.advantage = 1;
+      p.pendingAdvantage = true;
       m.statusEffects.blinded = 1;
       return `<p>Asap hitam meledak di sekitar ${m.name}. Kau menghilang ke dalamnya.</p>
-              <p class="buff"><span class="ability">SMOKE BOMB!</span> Serangan biasamu berikutnya: advantage (+5 to-hit).</p>
+              <p class="buff"><span class="ability">SMOKE BOMB!</span> Serangan biasamu berikutnya: <em>advantage</em> (2d20 take highest).</p>
               <p class="debuff">${m.name} buta selama 1 turn.</p>`;
     }
   },
@@ -135,15 +138,16 @@ export const ABILITIES = {
     use: (p, m) => {
       const mod = p.stats[p.weapon.stat];
       const r = rollD20WithMod(mod, m.ac, 'Poison Strike');
+      const rollInfo = r.auto ? '' : ` <span class="roll">d20+${mod} = ${r.total} vs AC ${m.ac}</span>`;
       if (r.success) {
         const dmg = roll(p.weapon.dmg[1]) + p.weapon.dmg[0] - 1 + Math.max(0, mod);
         m.hp -= dmg;
         m.statusEffects.poisoned = 3;
-        return `<p>Kau menusuk dengan belati beracun. <span class="roll">d20+${mod} = ${r.total} vs AC ${m.ac}</span></p>
+        return `<p>Kau menusuk dengan belati beracun.${rollInfo}</p>
                 <p class="success"><span class="ability">POISON STRIKE!</span> ${dmg} damage.</p>
                 <p class="debuff">${m.name} teracun — 1d4 damage tiap turn selama 3 turn.</p>`;
       }
-      return `<p class="failure">Tusukanmu meleset. <span class="roll">d20+${mod} = ${r.total} vs AC ${m.ac}</span></p>`;
+      return `<p class="failure">Tusukanmu meleset.${rollInfo}</p>`;
     }
   }
 };

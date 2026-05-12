@@ -6,6 +6,10 @@
      - DoT (poison, burn) tiap turn
      - Decrement buff/debuff
      - Format string status untuk display
+
+   Catatan: `advantage` BUKAN status effect di canon D&D.
+   Itu adalah modifier roll one-shot. Gunakan `player.pendingAdvantage`
+   sebagai flag boolean untuk efek delayed seperti Smoke Bomb.
    ============================================================ */
 
 import { roll } from './dice.js';
@@ -67,7 +71,7 @@ export function processMonsterStatusEffects(m) {
  * @param {Player | Monster} entity
  */
 export function decrementBuffs(entity) {
-  const buffs = /** @type {const} */ (['frosted', 'blinded', 'stunned', 'shielded', 'advantage']);
+  const buffs = /** @type {const} */ (['frosted', 'blinded', 'stunned', 'shielded']);
   buffs.forEach(eff => {
     const val = entity.statusEffects[eff];
     if (val && val > 0) entity.statusEffects[eff] = val - 1;
@@ -91,6 +95,6 @@ export function getStatusString(entity) {
   if (e.blinded && e.blinded > 0)     effects.push(`Blind(${e.blinded})`);
   if (e.stunned && e.stunned > 0)     effects.push(`Stun(${e.stunned})`);
   if (e.shielded && e.shielded > 0)   effects.push(`Shield(${e.shielded})`);
-  if (e.advantage && e.advantage > 0) effects.push(`Advantage(${e.advantage})`);
+  // Note: pendingAdvantage di-handle terpisah di Player, bukan di sini
   return effects.length ? effects.join(', ') : '—';
 }

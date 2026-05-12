@@ -46,7 +46,6 @@
  * @property {number} [blinded]
  * @property {number} [stunned]
  * @property {number} [shielded]
- * @property {number} [advantage]
  */
 
 /**
@@ -67,8 +66,7 @@
  * @property {Resource} resource
  * @property {string[]} abilities       - array of ability IDs
  * @property {StatusEffects} statusEffects
- * @property {number} fateTokens        - current Fate Tokens (untuk reroll)
- * @property {number} maxFateTokens     - max Fate Tokens (restored di inn)
+ * @property {boolean} [pendingAdvantage] - one-shot advantage flag untuk serangan berikutnya (canon D&D)
  */
 
 /**
@@ -108,11 +106,12 @@
 
 /**
  * @typedef {Object} DiceRollResult
- * @property {number} d                 - hasil dadu mentah (1-20)
+ * @property {number} d                 - hasil dadu mentah (1-20), atau 0 kalau auto-resolved
  * @property {number} total             - d + modifier
  * @property {boolean} success
  * @property {boolean} isCrit           - natural 20
  * @property {boolean} isFumble         - natural 1
+ * @property {boolean} auto             - true kalau auto-resolved tanpa actual roll
  */
 
 /**

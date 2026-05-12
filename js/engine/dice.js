@@ -3,20 +3,28 @@
    DICE.JS — Dice Math + Animated d20 Component
    ============================================================
    Berisi:
-     - roll(sides) & rollDice(count, sides)            → math utilities
-     - rollD20WithMod(mod, dc, label)                  → sync (legacy)
-     - requestRollWithReroll(mod, dc, label, options)  → async w/ reroll
-     - isDiceBusy() / whenDiceIdle(callback)           → sync API untuk UI
+     - roll(sides) & rollDice(count, sides)         → math utilities
+     - rollD20WithMod(mod, dc, label, options)      → canonical D&D d20 roll
+     - isDiceBusy() / whenDiceIdle(callback)        → sync API untuk UI
 
-   Filosofi v2:
-     Dadu adalah peristiwa, bukan hiasan. requestRollWithReroll()
-     menampilkan dadu BEFORE result diketahui, beri pemain agency
-     via reroll, lalu commit hasil.
+   Filosofi (canon D&D 5e):
+     - Dadu di-roll HANYA kalau hasilnya tidak pasti
+     - Auto-resolve untuk task trivial (modifier menjamin sukses)
+       atau mustahil (modifier menjamin gagal)
+     - Advantage/Disadvantage: roll 2d20, ambil tertinggi/terendah
+     - Tidak ada reroll murni (tidak canon) — gunakan advantage sebagai gantinya
    ============================================================ */
 
 import { state } from './state.js';
 
 /** @typedef {import('./types.js').DiceRollResult} DiceRollResult */
+
+/**
+ * @typedef {Object} RollOptions
+ * @property {boolean} [advantage]    - roll 2d20, ambil tertinggi
+ * @property {boolean} [disadvantage] - roll 2d20, ambil terendah
+ * @property {boolean} [noAutoResolve] - paksa roll meski hasilnya pasti (rare case)
+ */
 
 
 // ─── DICE MATH ──────────────────────────────────────────────
@@ -56,8 +64,39 @@ function buildResult(d, mod, dc) {
   const isCrit = d === 20;
   const isFumble = d === 1;
   const success = isCrit ? true : isFumble ? false : total >= dc;
-  return { d, total, success, isCrit, isFumble };
+  return { d, total, success, isCrit, isFumble, auto: false };
 }
+
+
+/**
+ * Cek apakah roll bisa auto-resolved (hasilnya sudah pasti).
+ *
+ * Auto-success: min_roll (1 + mod) >= DC → bahkan dadu jelek pun sukses
+ * Auto-fail:    max_roll (20 + mod) < DC → bahkan dadu sempurna gagal
+ *
+ * Catatan: natural 20 selalu crit success di D&D, jadi auto-fail
+ * hanya kalau 20 + mod < DC (mustahil sekalipun nat 20).
+ *
+ * @param {number} mod
+ * @param {number} dc
+ * @returns {DiceRollResult | null} - result kalau auto-resolved, null kalau perlu roll
+ */
+function tryAutoResolve(mod, dc) {
+  const minRoll = 1 + mod;
+  const maxRoll = 20 + mod;
+
+  if (maxRoll < dc) {
+    // Mustahil sukses (bahkan nat 20 tidak cukup)
+    return { d: 0, total: maxRoll, success: false, isCrit: false, isFumble: false, auto: true };
+  }
+  if (minRoll >= dc) {
+    // Pasti sukses (bahkan nat 1 cukup) — tapi natural 1 di canon = miss attack
+    // Untuk ability check, minRoll >= DC = pasti sukses
+    return { d: 0, total: minRoll, success: true, isCrit: false, isFumble: false, auto: true };
+  }
+  return null;
+}
+
 
 /**
  * Push entri ke roll log + render.
@@ -65,9 +104,13 @@ function buildResult(d, mod, dc) {
  * @param {DiceRollResult} r
  * @param {number} mod
  * @param {number} dc
+ * @param {RollOptions} [options]
  */
-function logRoll(label, r, mod, dc) {
-  const entry = `${label}: d20(${r.d}) ${mod >= 0 ? '+' : ''}${mod} = ${r.total} vs DC ${dc} → ${
+function logRoll(label, r, mod, dc, options = {}) {
+  const advTag = options.advantage ? ' [ADV]' : options.disadvantage ? ' [DIS]' : '';
+  const autoTag = r.auto ? ' [AUTO]' : '';
+  const diceStr = r.auto ? 'auto' : `d20(${r.d})`;
+  const entry = `${label}${advTag}${autoTag}: ${diceStr} ${mod >= 0 ? '+' : ''}${mod} = ${r.total} vs DC ${dc} → ${
     r.isCrit ? 'CRITICAL!' : r.isFumble ? 'FUMBLE!' : r.success ? 'SUCCESS' : 'FAIL'
   }`;
   state.rollLog.push(entry);
@@ -76,84 +119,44 @@ function logRoll(label, r, mod, dc) {
 
 
 /**
- * LEGACY: sync roll. Auto-trigger animasi tapi hasil sudah dihitung
- * sebelum animasi mulai. Dipakai untuk monster attack & internal rolls
- * yang tidak butuh tension UX dari sisi pemain.
+ * Roll d20 + modifier vs DC.
  *
- * Untuk player attack & ability rolls, pakai `requestRollWithReroll`.
+ * Sync function — hasil tersedia langsung. Auto-trigger animasi dadu
+ * di background (kecuali kalau auto-resolved).
  *
  * @param {number} mod
  * @param {number} dc
  * @param {string} label
+ * @param {RollOptions} [options]
  * @returns {DiceRollResult}
  */
-export function rollD20WithMod(mod, dc, label) {
-  const d = roll(20);
+export function rollD20WithMod(mod, dc, label, options = {}) {
+  // ── Auto-resolve check ────────────────────────────────────
+  if (!options.noAutoResolve) {
+    const autoResult = tryAutoResolve(mod, dc);
+    if (autoResult) {
+      logRoll(label, autoResult, mod, dc, options);
+      // Tidak animasi — caller pakai r.auto untuk adjust narasi
+      return autoResult;
+    }
+  }
+
+  // ── Roll dadu ─────────────────────────────────────────────
+  let d;
+  if (options.advantage) {
+    const d1 = roll(20), d2 = roll(20);
+    d = Math.max(d1, d2);
+  } else if (options.disadvantage) {
+    const d1 = roll(20), d2 = roll(20);
+    d = Math.min(d1, d2);
+  } else {
+    d = roll(20);
+  }
+
   const r = buildResult(d, mod, dc);
-  logRoll(label, r, mod, dc);
+  logRoll(label, r, mod, dc, options);
   animateDiceRoll(d, r.isCrit, r.isFumble);
   return r;
-}
-
-
-/**
- * NEW: async roll dengan tension UX + reroll support.
- *
- * Flow:
- *   1. Roll d20 internally
- *   2. Animasi dadu mulai (1 detik berputar)
- *   3. Dadu settle → tampilkan tombol Reroll jika options.canReroll
- *   4. Tunggu commit (auto setelah 3s, atau pemain klik reroll)
- *   5. Resolve Promise dengan hasil final
- *
- * @param {number} mod
- * @param {number} dc
- * @param {string} label
- * @param {Object} [options]
- * @param {boolean} [options.canReroll]
- * @param {() => boolean} [options.onRerollAttempt] - true=boleh reroll, false=tolak
- * @returns {Promise<DiceRollResult>}
- */
-export function requestRollWithReroll(mod, dc, label, options = {}) {
-  return new Promise((resolve) => {
-    /** @type {DiceRollResult} */
-    let currentResult = buildResult(roll(20), mod, dc);
-    let isReroll = false;
-
-    function doRoll() {
-      logRoll(isReroll ? `${label} (reroll)` : label, currentResult, mod, dc);
-
-      animateDiceRollAndWait(currentResult.d, currentResult.isCrit, currentResult.isFumble)
-        .then(() => {
-          if (options.canReroll) {
-            offerReroll(
-              // onReroll
-              () => {
-                if (options.onRerollAttempt && !options.onRerollAttempt()) {
-                  commitResult();
-                  return;
-                }
-                isReroll = true;
-                currentResult = buildResult(roll(20), mod, dc);
-                doRoll();
-              },
-              // onCommit
-              commitResult
-            );
-          } else {
-            setTimeout(commitResult, POST_SETTLE_DELAY);
-          }
-        });
-    }
-
-    function commitResult() {
-      hideReroll();
-      releaseIdleCallbacks();
-      resolve(currentResult);
-    }
-
-    doRoll();
-  });
 }
 
 
@@ -216,18 +219,8 @@ const D20_SVG = `
 </svg>
 `;
 
-const REROLL_BUTTON_HTML = `
-<button id="diceRerollBtn" class="dice-reroll-btn" title="Reroll dengan 1 Fate Token">
-  <span class="reroll-icon">↻</span>
-  <span class="reroll-label">Reroll</span>
-  <span class="reroll-cost">1 Fate</span>
-</button>
-`;
-
 /** @type {HTMLElement | null} */
 let diceContainer = null;
-/** @type {HTMLElement | null} */
-let rerollContainer = null;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let dismissTimer = null;
 /** @type {ReturnType<typeof setTimeout> | null} */
@@ -239,7 +232,6 @@ const idleCallbacks = [];
 
 const POST_SETTLE_DELAY = 400;
 const ROLL_DURATION = 1000;
-const REROLL_TIMEOUT = 3000;
 const VISIBLE_AFTER_SETTLE = 2500;
 
 
@@ -279,144 +271,62 @@ function ensureDiceContainer() {
   return diceContainer;
 }
 
-function ensureRerollContainer() {
-  if (rerollContainer) return rerollContainer;
-
-  rerollContainer = document.createElement('div');
-  rerollContainer.id = 'diceRerollContainer';
-  rerollContainer.className = 'dice-reroll-container';
-  rerollContainer.innerHTML = REROLL_BUTTON_HTML;
-  document.body.appendChild(rerollContainer);
-
-  return rerollContainer;
-}
-
 
 /**
- * LEGACY: Tampilkan animasi tanpa Promise return.
- * Dipakai untuk monster attack & internal rolls.
+ * Tampilkan animasi dadu. Fire-and-forget — caller tidak menunggu,
+ * tapi UI queue (showNarrative/showChoices) akan tunggu via whenDiceIdle.
  *
  * @param {number} result
  * @param {boolean} isCrit
  * @param {boolean} isFumble
  */
 export function animateDiceRoll(result, isCrit, isFumble) {
-  animateDiceRollAndWait(result, isCrit, isFumble).then(() => {
+  const container = ensureDiceContainer();
+  const numberEl = container.querySelector('.dice-number');
+  if (!numberEl) return;
+
+  if (dismissTimer) clearTimeout(dismissTimer);
+  if (settleTimer) clearTimeout(settleTimer);
+
+  diceBusy = true;
+
+  container.classList.remove('crit', 'fumble', 'visible', 'settled');
+  numberEl.textContent = '--';
+
+  void container.offsetWidth;
+
+  container.classList.add('visible', 'rolling');
+
+  let tickerCount = 0;
+  const ticker = setInterval(() => {
+    if (tickerCount < 8) {
+      numberEl.textContent = String(Math.floor(Math.random() * 20) + 1);
+      tickerCount++;
+    }
+  }, 100);
+
+  settleTimer = setTimeout(() => {
+    clearInterval(ticker);
+    container.classList.remove('rolling');
+    container.classList.add('settled');
+    numberEl.textContent = String(result);
+
+    if (isCrit) container.classList.add('crit');
+    if (isFumble) container.classList.add('fumble');
+
+    // Setelah settle, release queue dan auto-dismiss
     setTimeout(releaseIdleCallbacks, POST_SETTLE_DELAY);
-    if (dismissTimer) clearTimeout(dismissTimer);
     dismissTimer = setTimeout(() => {
       if (diceContainer) diceContainer.classList.remove('visible');
     }, VISIBLE_AFTER_SETTLE - POST_SETTLE_DELAY);
-  });
+  }, ROLL_DURATION);
 }
 
 
-/**
- * Animasikan dadu, return Promise yang resolve saat dadu settled.
- * (Tidak auto-commit / auto-dismiss — caller yang handle.)
- *
- * @param {number} result
- * @param {boolean} isCrit
- * @param {boolean} isFumble
- * @returns {Promise<void>}
- */
-function animateDiceRollAndWait(result, isCrit, isFumble) {
-  return new Promise((resolve) => {
-    const container = ensureDiceContainer();
-    const numberEl = container.querySelector('.dice-number');
-    if (!numberEl) {
-      resolve();
-      return;
-    }
-
-    if (dismissTimer) clearTimeout(dismissTimer);
-    if (settleTimer) clearTimeout(settleTimer);
-
-    diceBusy = true;
-
-    container.classList.remove('crit', 'fumble', 'visible', 'settled');
-    numberEl.textContent = '--';
-
-    void container.offsetWidth;
-
-    container.classList.add('visible', 'rolling');
-
-    let tickerCount = 0;
-    const ticker = setInterval(() => {
-      if (tickerCount < 8) {
-        numberEl.textContent = String(Math.floor(Math.random() * 20) + 1);
-        tickerCount++;
-      }
-    }, 100);
-
-    settleTimer = setTimeout(() => {
-      clearInterval(ticker);
-      container.classList.remove('rolling');
-      container.classList.add('settled');
-      numberEl.textContent = String(result);
-
-      if (isCrit) container.classList.add('crit');
-      if (isFumble) container.classList.add('fumble');
-
-      resolve();
-    }, ROLL_DURATION);
-  });
-}
-
-
-/**
- * @param {() => void} onReroll
- * @param {() => void} onCommit
- */
-function offerReroll(onReroll, onCommit) {
-  const reroll = ensureRerollContainer();
-  reroll.classList.add('visible');
-
-  /** @type {ReturnType<typeof setTimeout>} */
-  let autoCommitTimer;
-
-  function cleanup() {
-    clearTimeout(autoCommitTimer);
-    reroll.classList.remove('visible');
-    const btn = reroll.querySelector('#diceRerollBtn');
-    if (btn) {
-      /** @type {HTMLButtonElement} */ (btn).onclick = null;
-    }
-  }
-
-  const btn = reroll.querySelector('#diceRerollBtn');
-  if (btn) {
-    /** @type {HTMLButtonElement} */ (btn).onclick = () => {
-      cleanup();
-      onReroll();
-    };
-  }
-
-  autoCommitTimer = setTimeout(() => {
-    cleanup();
-    onCommit();
-  }, REROLL_TIMEOUT);
-}
-
-
-function hideReroll() {
-  if (rerollContainer) {
-    rerollContainer.classList.remove('visible');
-  }
-  if (diceContainer) {
-    if (dismissTimer) clearTimeout(dismissTimer);
-    dismissTimer = setTimeout(() => {
-      if (diceContainer) diceContainer.classList.remove('visible');
-    }, 600);
-  }
-}
-
-
-// Click dadu = skip waiting (untuk legacy roll)
+// Click dadu = skip waiting
 document.addEventListener('click', (e) => {
   if (diceContainer && diceContainer.classList.contains('visible')) {
     const target = /** @type {Node} */ (e.target);
-    if (rerollContainer && rerollContainer.contains(target)) return;
     if (diceContainer.contains(target)) {
       if (dismissTimer) clearTimeout(dismissTimer);
       if (settleTimer) clearTimeout(settleTimer);
