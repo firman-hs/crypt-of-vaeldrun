@@ -2,13 +2,8 @@
 
 > *Internal documentation untuk menjaga konsistensi project saat dikembangkan lintas sesi atau kontributor.*
 
-**Project**: The Crypt of Vael'drun  
-**Tipe**: Text-adventure RPG, browser-based, vanilla JS  
-**Last updated**: 2026-05-11
-
-> **Phase 1 refactor (2026-05-11)**: Project sudah dimigrasi ke **ES Modules** dengan struktur folder baru (`engine/`, `data/`, `scenes/`) dan type-checking via JSDoc + `tsconfig.json`. Lihat section "Struktur File" dan "Decisions History" untuk detail.
->
-> **Phase 2: Dadu Sebagai Tension (2026-05-11)**: Combat dadu refactor jadi async dengan **threshold display** sebelum roll, **reroll mechanic** dengan Fate Tokens (3 awal, restore di inn). Player attack & flee sekarang pakai `requestRollWithReroll()` yang Promise-based. Lihat section "Decisions History" untuk detail.
+**Project**: The Crypt of Vael'drun
+**Tipe**: Text-adventure RPG, browser-based, vanilla JS
 
 ---
 
@@ -44,7 +39,7 @@ crypt-of-vaeldrun/
     │   └── combat.js       # turn-based combat engine
     ├── data/               # definisi statis (jarang diubah)
     │   ├── classes.js      # 3 class definition
-    │   ├── abilities.js    # 9 ability (dipisah dari classes — Phase 1)
+    │   ├── abilities.js    # 9 ability per class
     │   └── monsters.js     # database monster + getMonster() factory
     └── scenes/             # konten cerita
         ├── start.js        # character creation + ability intro
@@ -88,7 +83,7 @@ npx -p typescript tsc --noEmit
 
 ### Global State
 
-Satu object `state` di `core.js` menyimpan semuanya:
+Satu object `state` di `engine/state.js` menyimpan semuanya:
 
 ```javascript
 const state = {
@@ -114,7 +109,9 @@ state.player = {
   weapon: { name: '...', dmg: [1, 8], stat: 'STR' },
   resource: { name: 'Stamina', max: 6, current: 6, regen: 2 },
   abilities: ['powerStrike', 'shieldBash', 'secondWind'],
-  statusEffects: {}           // { poisoned: 3, frosted: 2, dll }
+  statusEffects: {},          // { poisoned: 3, frosted: 2, dll }
+  fateTokens: 3,              // untuk reroll
+  maxFateTokens: 3
 };
 ```
 
@@ -158,15 +155,13 @@ const scenes = {
 
 Navigasi: `goToScene('myScene')`.
 
-### Circular Dependency Workaround
+### Dependency Injection (combat ↔ main)
 
 `combat.js` butuh `goToScene` & `init` (untuk handle flee & death), tapi keduanya di `main.js` yang mengimport `combat.js` lewat scenes. Untuk hindari circular import yang fragile:
 
 - `combat.js` export `setNavigation(goToSceneFn, initFn)`.
 - `main.js` panggil `setNavigation(goToScene, init)` saat boot.
 - Combat menyimpan reference ini di module-scope variable.
-
-Pattern ini disebut **dependency injection** dan lebih clean daripada hack `window.__game`.
 
 ---
 
@@ -184,9 +179,8 @@ Pattern ini disebut **dependency injection** dan lebih clean daripada hack `wind
 
 **Prefix scene** tergantung area:
 - `town*` → Aethelford
-- `crypt*` → Crypt of Vael'drun  
+- `crypt*` → Crypt of Vael'drun
 - `forge*` → Forge of Korr-Dun
-- (Future) `grove*` → Whispering Grove
 
 ---
 
@@ -195,94 +189,52 @@ Pattern ini disebut **dependency injection** dan lebih clean daripada hack `wind
 ### Dice System
 - `roll(sides)` → 1 dadu
 - `rollDice(count, sides)` → multiple dadu
-- `rollD20WithMod(mod, dc, label)` → **sync legacy**, untuk monster attack & internal rolls (tidak butuh tension UX dari sisi player)
-  - Auto-trigger animasi via `dice.js`
-  - Auto-log ke `state.rollLog`
+- `rollD20WithMod(mod, dc, label)` → **sync**, untuk monster attack & internal rolls (tidak butuh tension UX dari sisi player)
 - `requestRollWithReroll(mod, dc, label, options)` → **async dengan tension UX**, untuk player attack & ability checks
   - Tampilkan dadu BEFORE result diketahui
   - Tunggu pemain (auto-commit 3s atau klik reroll button)
   - `options.canReroll`: true = tawarkan tombol reroll
   - `options.onRerollAttempt`: callback yang return true/false (true = boleh reroll, decrement resource)
-  - Return Promise<DiceRollResult>
+  - Return `Promise<DiceRollResult>`
 
-### Reroll Mechanic (Phase 2)
+### Reroll Mechanic (Fate Tokens)
 - `Player.fateTokens`: current, `Player.maxFateTokens`: 3 (default)
 - Reroll cost: 1 Fate Token
 - Restore: penuh saat istirahat di inn
 - UI: button "↻ Reroll (1 Fate)" muncul setelah dadu settle, auto-commit setelah 3 detik
-- CSS: `.dice-reroll-container.visible` di `style.css`
 
 ### Combat
 - Entry: `combat('monsterId', onWinCallback)` atau `combat({...customMonster}, callback)`
 - Tiap turn: process player DoT → aksi player → process monster DoT → aksi monster → decrement buffs → regen resource
 - Setelah menang: heal separuh resource, reset status effects
+- Player phase: async (dadu tension). Monster phase: sync (pemain cuma menonton).
 
 ### Status Effects
-DoT (damage over turn): `poisoned` (1d4), `burning` (1d6)  
-Buffs: `shielded` (reduce dmg 1d8), `advantage` (+5 to-hit)  
-Debuffs musuh: `frosted` (-2 to-hit), `blinded` (-4 to-hit), `stunned` (skip turn)
+- DoT (damage over turn): `poisoned` (1d4), `burning` (1d6)
+- Buffs: `shielded` (reduce dmg 1d8), `advantage` (+5 to-hit)
+- Debuffs musuh: `frosted` (-2 to-hit), `blinded` (-4 to-hit), `stunned` (skip turn)
 
 ### XP Curve
 Threshold: `level × 100`. Per level up: +4 max HP, +1 max resource, full restore.
 
 ---
 
-## ✅ Decisions History (Why kita bikin gini)
+## ✅ Decisions (Why kita bikin gini)
 
 | Decision | Alasan |
 |----------|--------|
 | Inventory di-skip | Belum ada use case yang berarti, jadi cuma ngumpul item flavor. Revisit saat ada loot system real. |
 | Resource per class beda nama (Stamina/Mana/Focus) | Flavor — tiap class terasa unik, padahal mekaniknya sama. |
 | 3 ability per class (bukan 5+) | Cukup untuk variety, tidak overwhelming UI di text-based. |
-| Multi-file dari tadinya satu | Sudah 900+ baris, makin susah maintain. Sekarang scalable. |
-| ~~`window.__sceneRegistry`~~ → **ES Modules** (Phase 1, 2026-05-11) | Pattern global namespace gantian ke import/export native. Imports eksplisit di tiap file = pembaca tahu dari mana semua dependency datang. |
-| `engine/`, `data/`, `scenes/` folder split (Phase 1) | Foundation systems (engine) dipisah dari konten (data + scenes). Engine jarang berubah, scenes terus tumbuh — pemisahan logikal. |
-| `abilities.js` dipisah dari `classes.js` (Phase 1) | Class jarang ditambah (3 → mungkin 6 total), abilities akan terus tumbuh (9 → 30+). Berbeda growth pattern = beda file. |
-| JSDoc + tsconfig.json (no build step) (Phase 1) | Dapat type-checking penuh di VSCode tanpa compile step. Tetap pure vanilla JS, deploy ke GitHub Pages tanpa transformasi. |
+| ES Modules (bukan global namespace) | Imports eksplisit di tiap file = pembaca tahu dari mana semua dependency datang. |
+| `engine/`, `data/`, `scenes/` folder split | Foundation systems (engine) dipisah dari konten (data + scenes). Engine jarang berubah, scenes terus tumbuh. |
+| `abilities.js` dipisah dari `classes.js` | Class jarang ditambah (3 → mungkin 6 total), abilities terus tumbuh (9 → 30+). Beda growth pattern = beda file. |
+| JSDoc + tsconfig.json (no build step) | Type-checking penuh di VSCode tanpa compile step. Tetap pure vanilla JS, deploy ke GitHub Pages tanpa transformasi. |
 | `setNavigation()` dependency injection di combat | Combat butuh akses `goToScene`/`init` dari main.js, tapi main.js juga import combat lewat scenes. Inject lewat setter = no circular import yang fragile. |
 | Town sebagai hub (bukan linear) | Memberi sense of "world" + persiapan save/load + tempat heal. |
-| Animasi dadu non-invasive (hook di `rollD20WithMod`) | Bisa di-disable tanpa nyentuh kode game lainnya. |
 | Dice-aware narrative queue | `whenDiceIdle()` di dice.js + queue-aware showNarrative/showChoices = animasi dadu nggak fight dengan narasi. Turn-based feel. |
-| Magmaforge AC -2 saat scout sukses | Memberi reward untuk strategy, bukan cuma damage bonus. |
-| **Phase 2: Dadu jadi tension (2026-05-11)** | Sebelum: dadu cuma kosmetik, hasil sudah ditentukan sebelum animasi. Setelah: `requestRollWithReroll()` Promise-based — tampilkan threshold → animasi → reroll button → commit. Pemain merasa dadu beneran ada artinya. |
-| **Fate Tokens** (3 awal, restore di inn) | Memberi player agency atas dadu via reroll. Scarce resource biar keputusan reroll bermakna. Restore di inn = konsisten dengan HP/resource lain. |
-| Async player phase, sync monster phase | Player butuh tension UX (dadu lambat, ada reroll). Monster attack tidak butuh tension — pemain cuma menonton. Jadi monster pakai legacy `rollD20WithMod`. |
-
----
-
-## 🛣️ Roadmap
-
-### ✅ Selesai
-- [x] Multi-file architecture
-- [x] 3 class + 9 abilities + resource system
-- [x] Status effects (poison, burn, frost, blind, stun, shield, advantage)
-- [x] Town hub (Aethelford) dengan inn, smith, elder, world map
-- [x] 2 dungeon: Crypt of Vael'drun + Forge of Korr-Dun
-- [x] Multiple endings per dungeon (combat/parley/stealth)
-- [x] Animated d20 SVG dengan crit/fumble visuals
-- [x] Dice-aware narrative queue (animasi dadu sync dengan narasi)
-- [x] **Phase 1 (2026-05-11)**: Migrasi ke ES Modules + struktur folder baru + JSDoc types + tsconfig
-- [x] **Phase 2 (2026-05-11)**: Dadu sebagai tension — threshold display + Fate Tokens + reroll mechanic
-- [x] README + GitHub Pages deployment
-
-### 📋 Backlog (urutan prioritas)
-- [ ] **Save/Load** — auto-save di localStorage tiap masuk scene aman
-- [ ] **Equipment system** — drop loot dari boss, armor/weapon slots dengan stat bonus
-- [ ] **Shop di town** — Borric jual senjata, healer jual potion
-- [ ] **Subclass system level 3** — Warrior → Berserker/Guardian, Mage → Pyromancer/Necromancer, dll
-- [ ] **Dungeon ke-3: Whispering Grove** — tema stealth/puzzle, kontras dengan combat-heavy
-- [ ] **Sound effects** — pakai Howler.js, asset dari freesound.org
-- [ ] **NPC dialog tree** — branching dengan persuasion checks
-- [ ] **Achievement system** — track untuk replayability
-- [ ] **Random events** di world map
-- [ ] **Typewriter text effect** (optional toggle)
-
-### 💭 Maybe / Wishlist
-- Custom class creator (point-buy)
-- Procedural side-dungeons
-- Localization (English version)
-- Mobile UX optimizations
-- Light mode (parchment theme)
+| Async player phase, sync monster phase | Player butuh tension UX (dadu lambat, ada reroll). Monster attack tidak — pemain cuma menonton. |
+| Fate Tokens scarce (3 awal, restore di inn) | Memberi player agency atas dadu via reroll. Scarcity bikin keputusan reroll bermakna. Restore di inn = konsisten dengan HP/resource lain. |
 
 ---
 
@@ -373,18 +325,9 @@ Lalu masukkan ID-nya ke array `abilities` di class yang relevan (`js/data/classe
 
 ---
 
-## 🐛 Known Issues / TODO
+## 💡 Tips Pengembangan Lintas Sesi
 
-- [ ] Resource regen saat di town: setelah combat selesai, current resource pulih separuh, tapi saat masuk scene baru di luar combat tidak ada regen passive. Masih oke untuk sekarang karena ada inn.
-- [ ] Beberapa skill check di luar combat tidak punya konsekuensi DEX/INT/STR yang seimbang antar class — Mage selalu buruk di STR check, etc. Mungkin perlu alternative paths per scene.
-- [ ] Animasi dadu di mobile mungkin masih agak menutupi tombol di layar sangat kecil (<360px).
-- [ ] **ES Modules butuh server** — double-click `index.html` tidak akan jalan. Onboarding kontributor baru harus diingatkan untuk pakai `python3 -m http.server` atau live-server.
-
----
-
-## 💡 Tips untuk Pengembangan Lintas Sesi
-
-Kalau kamu mulai chat baru dengan Claude (atau developer lain), upload file ini + relevant code files agar dapat context lengkap.
+Kalau kamu mulai chat baru dengan AI assistant atau dev lain, upload file ini + relevant code files agar dapat context lengkap.
 
 **Template prompt awal yang efektif:**
 
@@ -408,15 +351,11 @@ File yang relevan: [LIST_FILE]
 | System (save/load, dll) | `js/engine/state.js`, `js/main.js`, `DEV_NOTES.md` |
 | Type definitions | `js/engine/types.js`, `tsconfig.json` |
 
----
-
-## 🤝 Pair Programming Notes
-
-Saat berdiskusi dengan AI assistant atau dev lain:
+**Saat berdiskusi dengan AI assistant atau dev lain:**
 - **Tunjukkan struktur dulu** sebelum implementasi (urutan: `apa yang akan diubah` → `kenapa` → `kode`)
 - **Test path harus eksplisit** — minta untuk testing manual karena tidak ada unit test
 - **Hindari refactor besar** sambil add fitur baru — pisahkan PR/commit
-- **Update file ini** setiap kali ambil keputusan arsitektural
+- **Update file ini** setiap kali ambil keputusan arsitektural baru
 
 ---
 
