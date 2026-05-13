@@ -26,9 +26,8 @@ import {
   updateStatusPanel, gainXP
 } from './ui.js';
 import {
-  processPlayerStatusEffects, processMonsterStatusEffects,
-  decrementBuffs, getStatusString
-} from './status-effects.js';
+  processDoT, tickModifiers, getModifier, getStatusString
+} from './effects.js';
 import { ABILITIES } from '../data/abilities.js';
 import { getMonster } from '../data/monsters.js';
 
@@ -94,7 +93,7 @@ export function combat(monsterIdOrObj, onWin) {
     // ─── PLAYER PHASE ───────────────────────────────────────
     let playerLog = '';
 
-    playerLog += processPlayerStatusEffects(p);
+    playerLog += processDoT(p, 'Kau');
     updateStatusPanel();
     if (p.hp <= 0) {
       if (playerLog) appendNarrative(playerLog);
@@ -128,20 +127,20 @@ export function combat(monsterIdOrObj, onWin) {
   function doMonsterPhase() {
     let monsterLog = '';
 
-    monsterLog += processMonsterStatusEffects(m);
+    monsterLog += processDoT(m, m.name);
     if (m.hp <= 0) {
       if (monsterLog) appendNarrative(monsterLog);
       return victory();
     }
 
-    if (m.statusEffects.stunned && m.statusEffects.stunned > 0) {
+    if (getModifier(m, 'skipTurn')) {
       monsterLog += `<p class="buff">${m.name} terhuyung dan kehilangan giliran.</p>`;
     } else {
       monsterLog += monsterAttack(p, m);
     }
 
-    decrementBuffs(p);
-    decrementBuffs(m);
+    tickModifiers(p);
+    tickModifiers(m);
 
     p.resource.current = Math.min(p.resource.max, p.resource.current + p.resource.regen);
     updateStatusPanel();
@@ -304,9 +303,8 @@ function playerAttack(p, m) {
  * @returns {string}
  */
 function monsterAttack(p, m) {
-  let toHit = m.toHit;
-  if (m.statusEffects.frosted && m.statusEffects.frosted > 0) toHit -= 2;
-  if (m.statusEffects.blinded && m.statusEffects.blinded > 0) toHit -= 4;
+  const toHitMod = /** @type {number} */ (getModifier(m, 'toHit'));
+  const toHit = m.toHit + toHitMod;
 
   const dc = 10 + p.stats.DEX;
   const prefix = `${m.name} mengayun ke arahmu`;
@@ -318,8 +316,8 @@ function monsterAttack(p, m) {
   }
   if (mr.auto && mr.success) {
     let dmg = roll(m.dmg[1]) + m.dmg[0] - 1;
-    if (p.statusEffects.shielded && p.statusEffects.shielded > 0) {
-      const reduction = roll(8);
+    const reduction = /** @type {number} */ (getModifier(p, 'damageReduction'));
+    if (reduction > 0) {
       const original = dmg;
       dmg = Math.max(0, dmg - reduction);
       p.hp -= dmg;
@@ -336,8 +334,8 @@ function monsterAttack(p, m) {
   if (mr.success) {
     let dmg = roll(m.dmg[1]) + m.dmg[0] - 1;
     if (mr.isCrit) dmg *= 2;
-    if (p.statusEffects.shielded && p.statusEffects.shielded > 0) {
-      const reduction = roll(8);
+    const reduction = /** @type {number} */ (getModifier(p, 'damageReduction'));
+    if (reduction > 0) {
       const original = dmg;
       dmg = Math.max(0, dmg - reduction);
       p.hp -= dmg;

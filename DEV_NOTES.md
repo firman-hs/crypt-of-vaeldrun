@@ -34,12 +34,13 @@ crypt-of-vaeldrun/
     │   ├── types.js        # JSDoc type definitions (Player, Monster, dll)
     │   ├── state.js        # global state object + resetState()
     │   ├── dice.js         # roll math + animasi d20 + queue API
-    │   ├── status-effects.js  # DoT, decrement buffs, format string
+    │   ├── effects.js      # status effect engine (apply, process DoT, modifier)
     │   ├── ui.js           # showNarrative, showChoices, updateStatusPanel
     │   └── combat.js       # turn-based combat engine
     ├── data/               # definisi statis (jarang diubah)
     │   ├── classes.js      # 3 class definition
     │   ├── abilities.js    # 9 ability per class
+    │   ├── effects.js      # registry status effect (poison, frost, dll)
     │   └── monsters.js     # database monster + getMonster() factory
     └── scenes/             # konten cerita
         ├── start.js        # character creation + ability intro
@@ -109,9 +110,7 @@ state.player = {
   weapon: { name: '...', dmg: [1, 8], stat: 'STR' },
   resource: { name: 'Stamina', max: 6, current: 6, regen: 2 },
   abilities: ['powerStrike', 'shieldBash', 'secondWind'],
-  statusEffects: {},          // { poisoned: 3, frosted: 2, dll }
-  fateTokens: 3,              // untuk reroll
-  maxFateTokens: 3
+  statusEffects: {}           // { poisoned: 3, frosted: 2, dll }
 };
 ```
 
@@ -187,32 +186,41 @@ Navigasi: `goToScene('myScene')`.
 ## ⚙️ Mekanik Inti
 
 ### Dice System
-- `roll(sides)` → 1 dadu
-- `rollDice(count, sides)` → multiple dadu
-- `rollD20WithMod(mod, dc, label)` → **sync**, untuk monster attack & internal rolls (tidak butuh tension UX dari sisi player)
-- `requestRollWithReroll(mod, dc, label, options)` → **async dengan tension UX**, untuk player attack & ability checks
-  - Tampilkan dadu BEFORE result diketahui
-  - Tunggu pemain (auto-commit 3s atau klik reroll button)
-  - `options.canReroll`: true = tawarkan tombol reroll
-  - `options.onRerollAttempt`: callback yang return true/false (true = boleh reroll, decrement resource)
-  - Return `Promise<DiceRollResult>`
-
-### Reroll Mechanic (Fate Tokens)
-- `Player.fateTokens`: current, `Player.maxFateTokens`: 3 (default)
-- Reroll cost: 1 Fate Token
-- Restore: penuh saat istirahat di inn
-- UI: button "↻ Reroll (1 Fate)" muncul setelah dadu settle, auto-commit setelah 3 detik
+- `roll(sides)` → 1 dadu (math utility)
+- `check(mod, dc, label, narrationPrefix, options)` → canonical D&D d20 check
+  - Auto-resolve kalau outcome sudah pasti (min/max roll vs DC)
+  - Tampilkan threshold ("butuh ≥N") sebelum dadu jatuh — transparansi ala tabletop
+  - Support `options.advantage` / `options.disadvantage` (roll 2d20)
+  - Trigger animasi dadu sebagai side-effect (fire-and-forget)
+- `whenDiceIdle(callback)` → sync API: jalankan callback sekarang kalau dadu idle, atau queue sampai animasi selesai. Dipakai `ui.js` agar narrative & choices tidak fight dengan animasi dadu.
 
 ### Combat
 - Entry: `combat('monsterId', onWinCallback)` atau `combat({...customMonster}, callback)`
 - Tiap turn: process player DoT → aksi player → process monster DoT → aksi monster → decrement buffs → regen resource
 - Setelah menang: heal separuh resource, reset status effects
-- Player phase: async (dadu tension). Monster phase: sync (pemain cuma menonton).
+- Player phase & monster phase keduanya sync. Monster phase digate lewat `whenDiceIdle(doMonsterPhase)` agar tunggu animasi dadu player selesai dulu.
 
 ### Status Effects
-- DoT (damage over turn): `poisoned` (1d4), `burning` (1d6)
-- Buffs: `shielded` (reduce dmg 1d8), `advantage` (+5 to-hit)
-- Debuffs musuh: `frosted` (-2 to-hit), `blinded` (-4 to-hit), `stunned` (skip turn)
+Registry pattern: `data/effects.js` = deklarasi, `engine/effects.js` = engine generic yang baca registry. Tambah effect baru = 1 entry di `data/effects.js`, tidak perlu edit engine atau combat.
+
+**Effect aktif saat ini:**
+- DoT: `poisoned` (1d4/turn, stack intensity), `burning` (1d6/turn, stack intensity)
+- Modifier debuff musuh: `frosted` (-2 to-hit, stack duration), `blinded` (-4 to-hit, stack refresh), `stunned` (skip turn, stack refresh)
+- Modifier buff player: `shielded` (reduce dmg 1d8, stack refresh)
+
+**Stacking mode** (didefinisikan per-effect di registry):
+- `intensity`: stacks++, turns = max(old, new). Damage/efek × stacks.
+- `duration`: turns += new. Stacks tetap 1.
+- `refresh`: turns = new. Tidak stack — cocok untuk binary on/off effect.
+
+**Public API** dari `engine/effects.js`:
+- `applyEffect(entity, id, duration)` — apply ke entity, handle stacking otomatis
+- `processDoT(entity, displayName)` — proses semua DoT di awal turn, return HTML log
+- `tickModifiers(entity)` — dekrement durasi modifier di akhir turn
+- `getModifier(entity, key)` — baca akumulasi modifier (`toHit`, `damageReduction`, `skipTurn`)
+- `getStatusString(entity)` — format display untuk status panel
+
+Note: `advantage` BUKAN status effect. Itu modifier roll one-shot — pakai `player.pendingAdvantage` (flag boolean) untuk efek delayed seperti Smoke Bomb.
 
 ### XP Curve
 Threshold: `level × 100`. Per level up: +4 max HP, +1 max resource, full restore.
@@ -233,8 +241,8 @@ Threshold: `level × 100`. Per level up: +4 max HP, +1 max resource, full restor
 | `setNavigation()` dependency injection di combat | Combat butuh akses `goToScene`/`init` dari main.js, tapi main.js juga import combat lewat scenes. Inject lewat setter = no circular import yang fragile. |
 | Town sebagai hub (bukan linear) | Memberi sense of "world" + persiapan save/load + tempat heal. |
 | Dice-aware narrative queue | `whenDiceIdle()` di dice.js + queue-aware showNarrative/showChoices = animasi dadu nggak fight dengan narasi. Turn-based feel. |
-| Async player phase, sync monster phase | Player butuh tension UX (dadu lambat, ada reroll). Monster attack tidak — pemain cuma menonton. |
-| Fate Tokens scarce (3 awal, restore di inn) | Memberi player agency atas dadu via reroll. Scarcity bikin keputusan reroll bermakna. Restore di inn = konsisten dengan HP/resource lain. |
+| Player & monster phase dipisah via `whenDiceIdle` | Animasi dadu menyatu dengan narasi: threshold muncul → dadu animasi → hasil → monster phase mulai setelah dadu settled. Memberi rhythm turn-based yang jelas. |
+| Status effect registry (`data/effects.js`) + engine generic (`engine/effects.js`) | Tambah effect baru = 1 entry di registry, tidak edit engine/combat. Per-effect stacking strategy (`intensity`/`duration`/`refresh`) memungkinkan tiap effect punya behavior sesuai semantiknya — stun gak bisa stack, poison damage stack, frost duration extend. Pattern sama dengan `monsters.js` dan `abilities.js`. |
 
 ---
 
@@ -291,12 +299,43 @@ namaAbility: {
   once: false,  // true jika sekali per combat (kayak secondWind)
   use: (p, m) => {
     // p = player, m = monster
-    // Modifikasi p.hp, m.hp, p.statusEffects, m.statusEffects
+    // Modifikasi p.hp / m.hp langsung.
+    // Untuk status effects, JANGAN mutasi langsung — pakai applyEffect():
+    //   applyEffect(m, 'poisoned', 3);    ✓
+    //   m.statusEffects.poisoned = 3;     ✗ (bypass stacking logic)
     return `<p>Log narasi...</p>`;
   }
 }
 ```
 Lalu masukkan ID-nya ke array `abilities` di class yang relevan (`js/data/classes.js`).
+
+### Tambah Status Effect Baru
+
+Edit `js/data/effects.js`, tambah ke `STATUS_EFFECTS`. Pilih `type` ('dot' atau 'modifier') dan `stack` mode ('intensity', 'duration', atau 'refresh').
+
+**DoT (damage tiap turn):**
+```javascript
+bleeding: {
+  name: 'Bleed',          // display name di status panel
+  type: 'dot',
+  stack: 'intensity',     // damage × stacks
+  damage: () => roll(6),
+  narrative: (target, dmg, stacks) =>
+    `${target} berdarah: ${dmg} damage${stacks > 1 ? ` (×${stacks})` : ''}.`
+}
+```
+
+**Modifier (debuff/buff aktif selama X turn):**
+```javascript
+weakened: {
+  name: 'Weak',
+  type: 'modifier',
+  stack: 'duration',      // re-apply = extend turn
+  modifier: { toHit: -3 } // bisa juga damageReduction: () => roll(6) atau skipTurn: true
+}
+```
+
+Sesudah didefinisikan, langsung bisa dipakai dari ability: `applyEffect(m, 'bleeding', 4)`. Engine otomatis handle stacking, decrement, dan akumulasi modifier — tidak perlu edit `combat.js` atau `engine/effects.js`.
 
 ### Tambah Class Baru
 

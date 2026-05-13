@@ -39,13 +39,54 @@
  */
 
 /**
- * @typedef {Object} StatusEffects
- * @property {number} [poisoned]
- * @property {number} [burning]
- * @property {number} [frosted]
- * @property {number} [blinded]
- * @property {number} [stunned]
- * @property {number} [shielded]
+ * State satu status effect aktif pada entity.
+ * @typedef {Object} EffectState
+ * @property {number} turns          - sisa durasi
+ * @property {number} stacks         - jumlah stack (untuk stack mode 'intensity')
+ */
+
+/**
+ * Map status effect aktif. Key = effect ID (poisoned, frosted, dll),
+ * value = state-nya. Effect dihapus dari map saat turns mencapai 0.
+ *
+ * @typedef {Object<string, EffectState>} StatusEffects
+ */
+
+/**
+ * @typedef {'dot' | 'modifier'} EffectType
+ */
+
+/**
+ * Cara stacking saat effect di-apply ulang.
+ *  - 'intensity': stacks++, turns = max(old, new). Damage/efek × stacks.
+ *  - 'duration':  turns += new. Stacks dan efek tetap 1.
+ *  - 'refresh':   turns = new. Tidak stack.
+ *
+ * @typedef {'intensity' | 'duration' | 'refresh'} StackMode
+ */
+
+/**
+ * Definisi status effect (data declarative di data/effects.js).
+ *
+ * @typedef {Object} StatusEffectDef
+ * @property {string} name                              - display name ("Poison", "Frost")
+ * @property {EffectType} type
+ * @property {StackMode} stack
+ * @property {() => number} [damage]                    - untuk type 'dot': dadu damage per turn
+ * @property {(target: string, dmg: number, stacks: number) => string} [narrative] - untuk type 'dot'
+ * @property {EffectModifier} [modifier]                - untuk type 'modifier'
+ */
+
+/**
+ * Modifier yang diterapkan saat effect type 'modifier' aktif.
+ * - toHit / damageReduction: numeric (di-akumulasi × stacks)
+ * - damageReduction bisa function (roll dadu) atau number flat
+ * - skipTurn: boolean flag
+ *
+ * @typedef {Object} EffectModifier
+ * @property {number} [toHit]
+ * @property {number | (() => number)} [damageReduction]
+ * @property {boolean} [skipTurn]
  */
 
 /**

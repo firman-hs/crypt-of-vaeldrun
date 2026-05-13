@@ -10,6 +10,7 @@
    ============================================================ */
 
 import { roll, check } from '../engine/dice.js';
+import { applyEffect } from '../engine/effects.js';
 
 /** @typedef {import('../engine/types.js').Ability} Ability */
 /** @typedef {Object<string, Ability>} AbilityRegistry */
@@ -47,7 +48,7 @@ export const ABILITIES = {
       let log = `<p>Kau menghantam dengan perisai.${rollInfo}</p>`;
       log += `<p class="success">Hit! ${dmg} damage.</p>`;
       if (r.success) {
-        m.statusEffects.stunned = 1;
+        applyEffect(m, 'stunned', 1);
         log += `<p class="debuff">${m.name} terhuyung — akan skip turn berikutnya.</p>`;
       }
       return log;
@@ -85,7 +86,7 @@ export const ABILITIES = {
     use: (p, m) => {
       const dmg = roll(6) + Math.floor(p.stats.INT / 2);
       m.hp -= dmg;
-      m.statusEffects.frosted = 2;
+      applyEffect(m, 'frosted', 2);
       return `<p>Hembusan dingin meledak dari telapak tanganmu. <span class="roll">Frost: 1d6 + ${Math.floor(p.stats.INT/2)} = ${dmg} damage</span></p>
               <p class="success"><span class="ability">FROST NOVA!</span> ${dmg} damage.</p>
               <p class="debuff">${m.name} membeku — to-hit -2 selama 2 turn.</p>`;
@@ -96,7 +97,7 @@ export const ABILITIES = {
     cost: 3,
     desc: 'Damage berikutnya yang kau terima dikurangi 1d8.',
     use: (p, m) => {
-      p.statusEffects.shielded = 1;
+      applyEffect(p, 'shielded', 1);
       return `<p>Cahaya biru-keemasan mengelilingi tubuhmu, lapisan demi lapisan.</p>
               <p class="buff"><span class="ability">ARCANE SHIELD!</span> Damage berikutnya yang kau terima akan dikurangi 1d8.</p>`;
     }
@@ -125,7 +126,7 @@ export const ABILITIES = {
     desc: 'Lempar bom asap. Serangan biasa berikutnya: advantage (2d20 take highest).',
     use: (p, m) => {
       p.pendingAdvantage = true;
-      m.statusEffects.blinded = 1;
+      applyEffect(m, 'blinded', 1);
       return `<p>Asap hitam meledak di sekitar ${m.name}. Kau menghilang ke dalamnya.</p>
               <p class="buff"><span class="ability">SMOKE BOMB!</span> Serangan biasamu berikutnya: <em>advantage</em> (2d20 take highest).</p>
               <p class="debuff">${m.name} buta selama 1 turn.</p>`;
@@ -142,7 +143,7 @@ export const ABILITIES = {
       if (r.success) {
         const dmg = roll(p.weapon.dmg[1]) + p.weapon.dmg[0] - 1 + Math.max(0, mod);
         m.hp -= dmg;
-        m.statusEffects.poisoned = 3;
+        applyEffect(m, 'poisoned', 3);
         return `<p>Kau menusuk dengan belati beracun.${rollInfo}</p>
                 <p class="success"><span class="ability">POISON STRIKE!</span> ${dmg} damage.</p>
                 <p class="debuff">${m.name} teracun — 1d4 damage tiap turn selama 3 turn.</p>`;
