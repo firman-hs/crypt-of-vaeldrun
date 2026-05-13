@@ -65,12 +65,13 @@ crypt-of-vaeldrun/
     │   ├── types.js        # JSDoc type definitions
     │   ├── state.js        # global game state
     │   ├── dice.js         # roll math + animasi d20
-    │   ├── status-effects.js  # DoT, buff/debuff helpers
+    │   ├── effects.js      # status effect engine (apply, process, query)
     │   ├── ui.js           # narrative & UI rendering
     │   └── combat.js       # turn-based combat engine
     ├── data/               # definisi statis
     │   ├── classes.js      # 3 class playable
     │   ├── abilities.js    # 9 ability per class
+    │   ├── effects.js      # registry status effect
     │   └── monsters.js     # database monster
     └── scenes/             # konten cerita
         ├── start.js        # character creation

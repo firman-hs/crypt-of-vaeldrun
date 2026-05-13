@@ -17,7 +17,7 @@
 
 import { state } from './state.js';
 import { whenDiceIdle } from './dice.js';
-import { getStatusString } from './status-effects.js';
+import { getStatusString } from './effects.js';
 
 /** @typedef {import('./types.js').Choice} Choice */
 
